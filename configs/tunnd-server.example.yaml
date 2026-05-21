@@ -1,0 +1,63 @@
+# tunnd-server.yaml — Server configuration
+#
+# Copy to one of these locations (searched in order):
+#   /etc/tunnd/tunnd-server.yaml         (system-wide)
+#   ~/.tunnd/tunnd-server.yaml           (user-local)
+#   ./tunnd-server.yaml                  (current working directory)
+
+# ── Required ──────────────────────────────────────────────────────────────────
+
+# Base domain for tunnel URLs. Tunnels appear as <subdomain>.<domain>.
+# Add a wildcard DNS A record:  *.tunnd.yourdomain.com → <server-ip>
+domain: "tunnd.yourdomain.com"
+
+# ── Ports ─────────────────────────────────────────────────────────────────────
+
+# Port for inbound tunnel traffic and WebSocket client connections.
+# When behind Caddy (recommended), set this to the internal port Caddy proxies to.
+# Use 443 only in standalone mode (requires TLS config below).
+http_port: 9095
+
+# Port for the admin dashboard and REST API.
+admin_port: 9096
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+
+# Path to the SQLite database file.
+db_path: "/data/tunnd.db"
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+# Leave admin_password empty to use the first-run bootstrap flow:
+# visit the admin URL in your browser and set a password there.
+# You can also set it here to skip the bootstrap step.
+# admin_password: ""
+
+# ── Subdomain Reservations ────────────────────────────────────────────────────
+
+reserved_subdomains:
+  - "www"
+  - "api"
+  - "admin"
+  - "mail"
+  - "ftp"
+
+# ── Limits ────────────────────────────────────────────────────────────────────
+
+# Maximum simultaneous tunnels per auth token. 0 = unlimited.
+max_tunnels_per_token: 0
+
+# ── TCP tunneling ─────────────────────────────────────────────────────────────
+
+# When a client runs `tunnd tcp <port>`, the server allocates a public TCP
+# port from this range and binds a listener on it. Open this entire range in
+# your firewall and (when running in Docker) publish it from the container.
+#
+# Default range gives you 100 simultaneous TCP tunnels — bump as needed.
+tcp_min_port: 20000
+tcp_max_port: 20100
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+log_level: "info"
+log_format: "json"
