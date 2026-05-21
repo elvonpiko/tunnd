@@ -1,0 +1,41 @@
+# Binaries
+/bin/
+dist/
+/tunnd
+/tunnd-server
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# TLS cache
+.autocert-cache/
+
+# Go
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Node / Astro (docs site)
+node_modules/
+.astro/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# goreleaser
+/dist/
+
+# Local agent / IDE state
+.kiro/

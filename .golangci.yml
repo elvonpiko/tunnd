@@ -1,0 +1,35 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - exhaustive
+    - noctx
+    - bodyclose
+    - contextcheck
+    - exportloopref
+    - godot
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/elvonpiko/tunnd
+  godot:
+    scope: declarations
+
+issues:
+  exclude-rules:
+    - path: "_test\\.go"
+      linters: [errcheck, unparam]
+    - path: "cmd/"
+      linters: [unparam]
