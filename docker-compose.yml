@@ -1,0 +1,42 @@
+# docker-compose.yml — Tunnd standalone with automatic Let's Encrypt TLS
+#
+# This is the simplest production setup: Tunnd handles TLS directly.
+# No reverse proxy needed. Port 80 must be publicly reachable for ACME.
+#
+# Usage:
+#   export TUNND_DOMAIN=tunnd.yourdomain.com
+#   export TUNND_TLS_EMAIL=you@example.com
+#   docker compose up -d
+#
+# First run: visit https://tunnd.yourdomain.com to set your admin password.
+# Then use `docker compose exec tunnd tunnd-server token create my-laptop`
+# to create your first client token.
+
+services:
+  tunnd:
+    image: ghcr.io/elvonpiko/tunnd-server:latest
+    container_name: tunnd
+    restart: unless-stopped
+    ports:
+      - "80:80"       # ACME HTTP-01 challenge (Let's Encrypt)
+      - "443:443"     # Public HTTPS tunnel traffic
+      - "9091:9091"   # Admin dashboard (firewall this in production)
+      - "20000-20100:20000-20100"  # Public TCP tunnel ports (`tunnd tcp <port>`)
+    volumes:
+      - tunnd-data:/data
+    environment:
+      - TUNND_DOMAIN=${TUNND_DOMAIN}
+      - TUNND_TLS_EMAIL=${TUNND_TLS_EMAIL}
+      - TUNND_DB_PATH=/data/tunnd.db
+      - TUNND_ACME_CACHE_DIR=/data/.autocert-cache
+      - TUNND_LOG_LEVEL=info
+      - TUNND_LOG_FORMAT=json
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  tunnd-data:

@@ -1,0 +1,38 @@
+# docker-compose.manual-tls.yml — Tunnd standalone with your own TLS certificate
+#
+# Use this when you already have a wildcard certificate (e.g. from Certbot DNS-01
+# or a commercial CA) and don't want to use Let's Encrypt autocert.
+#
+# Usage:
+#   export TUNND_DOMAIN=tunnd.yourdomain.com
+#   export TLS_CERTS_DIR=/etc/letsencrypt/live/tunnd.yourdomain.com
+#   docker compose -f docker-compose.manual-tls.yml up -d
+
+services:
+  tunnd:
+    image: ghcr.io/elvonpiko/tunnd-server:latest
+    container_name: tunnd
+    restart: unless-stopped
+    ports:
+      - "443:443"     # Public HTTPS tunnel traffic
+      - "9091:9091"   # Admin dashboard
+      - "20000-20100:20000-20100" # Public TCP tunnel ports
+    volumes:
+      - tunnd-data:/data
+      - ${TLS_CERTS_DIR:-./certs}:/etc/tunnd/certs:ro
+    environment:
+      - TUNND_DOMAIN=${TUNND_DOMAIN}
+      - TUNND_TLS_CERT_FILE=/etc/tunnd/certs/fullchain.pem
+      - TUNND_TLS_KEY_FILE=/etc/tunnd/certs/privkey.pem
+      - TUNND_DB_PATH=/data/tunnd.db
+      - TUNND_LOG_LEVEL=info
+      - TUNND_LOG_FORMAT=json
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  tunnd-data:

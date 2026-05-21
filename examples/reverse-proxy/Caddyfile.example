@@ -1,0 +1,39 @@
+# Caddyfile — Tunnd behind Caddy with manual TLS certificates
+#
+# This is the recommended production setup for Tunnd.
+# Caddy terminates TLS (using certs you provide) and proxies
+# traffic to the Tunnd server on the internal Docker network.
+#
+# Replace "tunnd.example.com" with your actual domain throughout.
+# Replace cert paths with the actual paths on your server.
+#
+# How it works:
+#   - tunnd.example.com        → admin dashboard (port 9096)
+#   - *.tunnd.example.com      → tunnel traffic  (port 9095)
+
+# ── Tunnd control plane + admin dashboard ────────────────────────────────────
+tunnd.example.com {
+    tls /etc/caddy/certs/tunnd/fullchain.pem /etc/caddy/certs/tunnd/privateKey.pem
+
+    # WebSocket control plane (client connections)
+    handle /_tunnd/control {
+        reverse_proxy tunnd-server:9095
+    }
+
+    # Admin dashboard
+    handle {
+        reverse_proxy tunnd-server:9096
+    }
+}
+
+# ── Wildcard tunnel subdomains ────────────────────────────────────────────────
+*.tunnd.example.com {
+    tls /etc/caddy/certs/tunnd/fullchain.pem /etc/caddy/certs/tunnd/privateKey.pem
+
+    reverse_proxy tunnd-server:9095 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up Host {host}
+    }
+}

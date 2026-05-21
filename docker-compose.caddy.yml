@@ -1,0 +1,133 @@
+# docker-compose.caddy.yml
+#
+# Deployment behind Caddy reverse proxy with automatic HTTPS via ACME.
+# Caddy handles TLS termination and routes wildcard subdomain traffic to
+# the tunnd-server. The tunnd-server only listens on the internal network.
+#
+# Prerequisites:
+#   - Wildcard DNS A record: *.tunnel.yourdomain.com → <server-ip>
+#   - Port 80 must be publicly reachable for ACME HTTP-01 challenge
+#   - Port 443 must be publicly reachable for HTTPS traffic
+#   - A Caddyfile.caddy file in the same directory (see below)
+#
+# Example Caddyfile.caddy:
+#   *.tunnel.yourdomain.com {
+#       tls {
+#           # Use DNS challenge for wildcard cert (replace with your DNS provider)
+#           # dns cloudflare {env.CF_API_TOKEN}
+#       }
+#       reverse_proxy tunnd-server:9091 {
+#           header_up X-Real-IP {remote_host}
+#           header_up X-Forwarded-For {remote_host}
+#           header_up X-Forwarded-Proto {scheme}
+#       }
+#   }
+#
+# Usage:
+#   export TUNND_DOMAIN=tunnel.yourdomain.com
+#   export TUNND_ADMIN_PASSWORD=your-secure-password
+#   docker compose -f docker-compose.caddy.yml up -d
+
+services:
+  tunnd-server:
+    image: ghcr.io/elvonpiko/tunnd-server:latest
+    container_name: tunnd-caddy-backend
+    restart: unless-stopped
+
+    # No external port exposure — tunnd-server is only accessible within the
+    # Docker network. Caddy forwards requests to it on port 9091.
+    expose:
+      - "9091" # Admin port (internal only; accessible by Caddy on the shared network)
+
+    # Public TCP tunnel ports (`tunnd tcp <port>`). Published directly because
+    # Caddy doesn't proxy raw TCP — clients connect to the host on these ports
+    # and Docker forwards them straight to tunnd-server.
+    ports:
+      - "20000-20100:20000-20100"
+
+    volumes:
+      # Persistent storage for the SQLite database
+      - tunnd-data:/data
+
+    environment:
+      # Required: base domain for tunnel URLs (e.g. *.tunnd.yourdomain.com)
+      - TUNND_DOMAIN=${TUNND_DOMAIN}
+
+      # Optional: admin password — leave unset to use the first-run bootstrap flow
+      # (visit the admin URL and set a password on first login)
+      - TUNND_ADMIN_PASSWORD=${TUNND_ADMIN_PASSWORD:-}
+
+      # Path inside the container for the SQLite database
+      - TUNND_DB_PATH=/data/tunnd.db
+
+      # Log verbosity: debug | info | warn | error (default: info)
+      - TUNND_LOG_LEVEL=info
+
+      # Log format: pretty (human-readable) | json (for log aggregators)
+      - TUNND_LOG_FORMAT=json
+
+    deploy:
+      resources:
+        limits:
+          # Maximum CPU usage for the tunnd-server container
+          cpus: '1.0'
+          # Maximum memory usage for the tunnd-server container
+          memory: 512M
+
+    healthcheck:
+      # Check that the admin API is reachable and responding on the admin port
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/stats"]
+      # How often to run the health check
+      interval: 30s
+      # Maximum time to wait for a health check response
+      timeout: 5s
+      # Number of consecutive failures before the container is marked unhealthy
+      retries: 3
+      # Grace period at startup during which failed checks don't count
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tunnd-caddy
+    restart: unless-stopped
+
+    ports:
+      - "80:80"   # Required for ACME HTTP-01 challenge and HTTP→HTTPS redirect
+      - "443:443" # Public HTTPS port for tunnel and admin traffic
+
+    volumes:
+      # Caddyfile with wildcard subdomain reverse proxy configuration.
+      # Must define routing for *.tunnel.yourdomain.com → tunnd-server:9091
+      - ./Caddyfile.caddy:/etc/caddy/Caddyfile:ro
+
+      # Persistent Caddy data (TLS certificates, OCSP staples, etc.)
+      - caddy-data:/data
+
+      # Caddy configuration state directory
+      - caddy-config:/config
+
+    healthcheck:
+      # Check that Caddy's admin API is healthy (Caddy built-in admin endpoint)
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      # How often to run the health check
+      interval: 30s
+      # Maximum time to wait for a health check response
+      timeout: 5s
+      # Number of consecutive failures before the container is marked unhealthy
+      retries: 3
+      # Grace period at startup during which failed checks don't count
+      start_period: 10s
+
+    # Wait for tunnd-server to be healthy before starting Caddy.
+    # This ensures Caddy can immediately proxy requests without connection errors.
+    depends_on:
+      tunnd-server:
+        condition: service_healthy
+
+volumes:
+  # Named volume for persistent tunnd database storage
+  tunnd-data:
+  # Named volume for Caddy TLS certificates and data
+  caddy-data:
+  # Named volume for Caddy configuration state
+  caddy-config:

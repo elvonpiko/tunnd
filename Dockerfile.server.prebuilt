@@ -1,0 +1,19 @@
+FROM caddy:latest
+
+RUN addgroup -g 1000 tunnd && \
+    adduser -D -u 1000 -G tunnd tunnd && \
+    mkdir -p /data && chown tunnd:tunnd /data
+
+COPY tunnd-server /usr/local/bin/tunnd-server
+RUN chmod +x /usr/local/bin/tunnd-server
+
+USER tunnd
+
+VOLUME ["/data"]
+EXPOSE 9095 9096
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+  CMD wget -qO- http://localhost:9096/api/stats || exit 1
+
+ENTRYPOINT ["/usr/local/bin/tunnd-server"]
+CMD ["--config", "/data/tunnd-server.yaml"]
