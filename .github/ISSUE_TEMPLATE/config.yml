@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://elvonpiko.github.io/tunnd/
+    about: User guides, configuration reference, and troubleshooting.
+  - name: Security advisory
+    url: https://github.com/elvonpiko/tunnd/security/advisories/new
+    about: Report a vulnerability privately. Please do not open a public issue.
+  - name: Discussion
+    url: https://github.com/elvonpiko/tunnd/discussions
+    about: Questions, ideas, or things that aren't quite a bug report yet.
