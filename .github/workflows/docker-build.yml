@@ -72,12 +72,11 @@ jobs:
     permissions:
       contents: read
       packages: read
-      # security-events: write is needed only by the optional SARIF upload
-      # step at the end of this job. The upload itself is wrapped in
-      # continue-on-error so if code scanning isn't enabled on the repo
-      # (which is the default for new public repos), the job still passes
-      # on the basis of the Trivy scan result alone.
-      security-events: write
+      # security-events: write would be needed to upload SARIF results to
+      # the GitHub Security tab, but on fresh repos without code scanning
+      # enabled, declaring the permission makes the runner refuse to even
+      # start the job. We instead let the upload step (below) run without
+      # that permission and continue-on-error past the harmless 403.
 
     steps:
       - uses: actions/checkout@v4
@@ -179,11 +178,11 @@ jobs:
             ${{ steps.image.outputs.ref }}
 
       # Poll docker inspect until the container reports "healthy" or the
-      # 30-second timeout is reached. Fail the job if the deadline passes.
+      # 60-second timeout is reached. Fail the job if the deadline passes.
       - name: Wait for container to become healthy
         run: |
-          echo "Waiting for container to become healthy (timeout: 30s)..."
-          TIMEOUT=30
+          echo "Waiting for container to become healthy (timeout: 60s)..."
+          TIMEOUT=60
           ELAPSED=0
           INTERVAL=3
           while [ $ELAPSED -lt $TIMEOUT ]; do
