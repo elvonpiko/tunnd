@@ -227,12 +227,22 @@ func LoadClient(cfgFile string, cliOverrides map[string]interface{}) (*Client, e
 //  2. ./[defaultName].yaml (current working directory)
 //  3. ~/.tunnd/[defaultName].yaml (user home directory)
 //  4. /etc/tunnd/[defaultName].yaml (system-wide)
+//
+// A missing config file is not fatal — env vars and built-in defaults can
+// fully describe a working configuration. We only fail when a file is
+// found but unparseable.
 func loadConfigFile(v *viper.Viper, cfgFile, defaultName string) error {
-	// If explicit config file specified, use it exclusively
+	// If explicit config file specified, use it when present, otherwise fall
+	// through to env-driven configuration.
 	if cfgFile != "" {
+		if _, err := os.Stat(cfgFile); err != nil {
+			if os.IsNotExist(err) {
+				return nil // env vars / defaults will provide values
+			}
+			return fmt.Errorf("stat config file %s: %w", cfgFile, err)
+		}
 		v.SetConfigFile(cfgFile)
 		if err := v.ReadInConfig(); err != nil {
-			// File specified but unparseable or not found — return error
 			return fmt.Errorf("failed to read config file %s: %w", cfgFile, err)
 		}
 		return nil

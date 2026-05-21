@@ -16,7 +16,7 @@ builds:
       - -X main.CommitSHA={{.Commit}}
       - -X main.BuildDate={{.Date}}
     env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
       - darwin
@@ -53,10 +53,10 @@ archives:
   - id: server
     ids: [server]
     name_template: "tunnd-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - LICENSE
@@ -65,10 +65,10 @@ archives:
   - id: client
     ids: [client]
     name_template: "tunnd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - LICENSE

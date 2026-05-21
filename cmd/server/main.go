@@ -91,7 +91,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	if err := ensureDir(filepath.Dir(cfg.DBPath)); err != nil {
 		return fmt.Errorf("creating DB directory %s: %w", filepath.Dir(cfg.DBPath), err)
 	}
-	if cfg.ACMECacheDir != "" {
+	// Only ensure the ACME cache dir when autocert is actually going to use it.
+	// Manual-cert and no-TLS deployments don't need it, and creating it under
+	// a read-only working directory (e.g. inside a Docker image's /) just
+	// surfaces a confusing permission error at startup.
+	if cfg.TLSEmail != "" && cfg.ACMECacheDir != "" {
 		if err := ensureDir(cfg.ACMECacheDir); err != nil {
 			return fmt.Errorf("creating ACME cache directory %s: %w", cfg.ACMECacheDir, err)
 		}

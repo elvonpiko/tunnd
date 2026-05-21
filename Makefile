@@ -24,7 +24,7 @@ build: build-server build-client
 
 build-server: ## Build the server binary
 	@mkdir -p $(BINARY_DIR)
-	CGO_ENABLED=1 go build $(GO_FLAGS) -o $(SERVER_BIN) ./cmd/server
+	CGO_ENABLED=0 go build $(GO_FLAGS) -o $(SERVER_BIN) ./cmd/server
 	@echo "Built $(SERVER_BIN)"
 
 build-client: ## Build the client binary
