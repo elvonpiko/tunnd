@@ -72,7 +72,11 @@ jobs:
     permissions:
       contents: read
       packages: read
-      # Required to upload SARIF results to GitHub Security tab
+      # security-events: write is needed only by the optional SARIF upload
+      # step at the end of this job. The upload itself is wrapped in
+      # continue-on-error so if code scanning isn't enabled on the repo
+      # (which is the default for new public repos), the job still passes
+      # on the basis of the Trivy scan result alone.
       security-events: write
 
     steps:
@@ -86,34 +90,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract the semver tag so we scan the exact image that was built
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
+      # Resolve the image reference once; reuse below.
+      - name: Resolve image reference
+        id: image
+        run: |
+          REF="${GITHUB_REF_NAME#v}"
+          echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${REF}" >> "$GITHUB_OUTPUT"
 
-      # Scan the published image for vulnerabilities.
-      # Fails the job if any HIGH or CRITICAL CVEs are found.
-      # Results are also uploaded to the GitHub Security tab as SARIF.
+      # Scan the published image for vulnerabilities. Fails the job on
+      # HIGH or CRITICAL findings (with a fix available — ignore-unfixed).
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ steps.meta.outputs.tags }}
+          image-ref: ${{ steps.image.outputs.ref }}
           format: sarif
           output: trivy-results.sarif
-          # Fail the pipeline on HIGH or CRITICAL vulnerabilities
           exit-code: "1"
           ignore-unfixed: true
           severity: HIGH,CRITICAL
 
-      # Upload SARIF output so findings appear in the GitHub Security tab
+      # Upload SARIF output so findings appear in the GitHub Security tab.
+      # If code scanning isn't enabled on the repo, this step harmlessly
+      # fails and the job still passes on the Trivy result above.
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        # Always upload results, even when Trivy exits non-zero, so findings are visible
         if: always()
+        continue-on-error: true
         with:
           sarif_file: trivy-results.sarif
 
@@ -137,22 +139,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract the semver tag so we test the exact image that was built
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
+      # Use the explicit semver tag for predictable pull (the metadata
+      # action emits multiple tags — latest, semver, major, etc. — joined
+      # by newlines, which docker pull doesn't accept).
+      - name: Resolve image reference
+        id: image
+        run: |
+          # Strip a leading 'v' from the git ref to match the {{version}}
+          # template that goreleaser/docker-metadata uses.
+          REF="${GITHUB_REF_NAME#v}"
+          echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${REF}" >> "$GITHUB_OUTPUT"
 
-      # Pull the amd64 image explicitly so it is available locally for docker run
+      # Pull the amd64 image explicitly so it is available locally for docker run.
+      # Retries handle the brief manifest-propagation lag right after a push.
       - name: Pull image (linux/amd64)
-        run: docker pull --platform linux/amd64 ${{ steps.meta.outputs.tags }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if docker pull --platform linux/amd64 ${{ steps.image.outputs.ref }}; then
+              exit 0
+            fi
+            echo "Pull attempt $attempt failed; sleeping before retry..."
+            sleep $((attempt * 5))
+          done
+          exit 1
 
       # Start the container with minimal test configuration.
-      # TUNND_DOMAIN and TUNND_ADMIN_PASSWORD are required by the server to start.
-      # Port 9091 (admin) is mapped to the host so we can reach /api/stats.
+      # TUNND_DOMAIN and TUNND_ADMIN_PASSWORD are required by the server to
+      # start. The admin port (9091) is mapped to the host so we can reach
+      # /healthz and /api/stats.
       - name: Start test container
         run: |
           docker run -d \
@@ -160,8 +174,9 @@ jobs:
             --platform linux/amd64 \
             -p 9091:9091 \
             -e TUNND_DOMAIN=test.example.com \
-            -e TUNND_ADMIN_PASSWORD=testpassword123 \
-            ${{ steps.meta.outputs.tags }}
+            -e TUNND_ADMIN_PASSWORD=testpassword12345 \
+            -e TUNND_HTTP_PORT=8080 \
+            ${{ steps.image.outputs.ref }}
 
       # Poll docker inspect until the container reports "healthy" or the
       # 30-second timeout is reached. Fail the job if the deadline passes.
@@ -199,7 +214,7 @@ jobs:
           # success. -L follows it so we land on / (200).
           LOGIN_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
             -c "$COOKIE" -L \
-            --data-urlencode "password=testpassword123" \
+            --data-urlencode "password=testpassword12345" \
             http://localhost:9091/login)
           echo "Login response: HTTP $LOGIN_HTTP"
           if [ "$LOGIN_HTTP" != "200" ]; then

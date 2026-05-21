@@ -103,34 +103,10 @@ changelog:
     - title: "Other Changes"
       order: 999
 
-dockers:
-  - image_templates:
-      - "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}-amd64"
-    ids: [server]
-    dockerfile: Dockerfile.server
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.revision={{ .Commit }}"
-
-  - image_templates:
-      - "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}-arm64"
-    ids: [server]
-    dockerfile: Dockerfile.server
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/arm64"
-
-docker_manifests:
-  - name_template: "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}"
-    image_templates:
-      - "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}-amd64"
-      - "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}-arm64"
-  - name_template: "ghcr.io/elvonpiko/tunnd-server:latest"
-    image_templates:
-      - "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}-amd64"
-      - "ghcr.io/elvonpiko/tunnd-server:{{ .Tag }}-arm64"
+# Container images are built and pushed by .github/workflows/docker-build.yml
+# (multi-arch via docker buildx + GHA cache). Keeping that pipeline separate
+# from goreleaser avoids duplicate pushes for the same tag and a goreleaser
+# deprecation against the dockers/docker_manifests stanzas.
 
 brews: []
 # Homebrew tap for the client will be wired up post-launch once the project
