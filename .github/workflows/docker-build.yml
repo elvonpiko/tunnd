@@ -186,19 +186,36 @@ jobs:
           docker logs tunnd-healthcheck-test
           exit 1
 
-      # Verify the /api/stats endpoint returns HTTP 200.
-      # This confirms the health check endpoint is actually reachable.
-      - name: Verify /api/stats endpoint responds
+      # Verify the /api/stats endpoint responds correctly through the
+      # admin session-cookie auth flow: POST /login with the password,
+      # capture the session cookie, then call /api/stats with it.
+      - name: Verify admin auth + /api/stats
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --user admin:testpassword123 \
-            http://localhost:9091/api/stats)
-          echo "HTTP status from /api/stats: $HTTP_STATUS"
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "ERROR: /api/stats returned HTTP $HTTP_STATUS, expected 200."
+          set -e
+          COOKIE=$(mktemp)
+          trap "rm -f $COOKIE" EXIT
+
+          # Log in. Tunnd issues a 303 redirect with the session cookie on
+          # success. -L follows it so we land on / (200).
+          LOGIN_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -c "$COOKIE" -L \
+            --data-urlencode "password=testpassword123" \
+            http://localhost:9091/login)
+          echo "Login response: HTTP $LOGIN_HTTP"
+          if [ "$LOGIN_HTTP" != "200" ]; then
+            echo "ERROR: login did not return HTTP 200 (got $LOGIN_HTTP)."
             exit 1
           fi
-          echo "Health check endpoint verified successfully."
+
+          # Now hit the API with the session cookie.
+          STATS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -b "$COOKIE" http://localhost:9091/api/stats)
+          echo "/api/stats response: HTTP $STATS_HTTP"
+          if [ "$STATS_HTTP" != "200" ]; then
+            echo "ERROR: /api/stats returned HTTP $STATS_HTTP, expected 200."
+            exit 1
+          fi
+          echo "Admin login + /api/stats verified successfully."
 
       # Always remove the test container to keep the runner clean,
       # even if previous steps failed.
