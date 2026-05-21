@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tunnd — Self-hosted tunnels. One command. Your infra.</title>
+<meta name="description" content="Tunnd is the self-hosted alternative to ngrok. Expose any HTTP, WebSocket, or raw TCP service in one command — on infrastructure you own.">
+<meta property="og:title" content="Tunnd — Self-hosted tunnels. One command. Your infra.">
+<meta property="og:description" content="Open-source ngrok alternative. HTTP, WebSockets, raw TCP — one binary, your VPS, your bytes.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://elvonpiko.github.io/tunnd/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="/tunnd/logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0 }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased }
+
+:root {
+  --bg: #08080a;
+  --bg2: #0e0e11;
+  --bg3: #16161a;
+  --bg4: #1d1d22;
+  --border: rgba(255,255,255,.07);
+  --border2: rgba(255,255,255,.13);
+  --text: #f5f5f7;
+  --sub: #b1b1ba;
+  --muted: #6e6e7a;
+  --accent: #5ef0c0;
+  --accent-glow: rgba(94,240,192,.18);
+  --accent-soft: rgba(94,240,192,.08);
+  --green: #34d399;
+  --amber: #fbbf24;
+  --blue: #60a5fa;
+  --red: #f87171;
+  --mono: 'Geist Mono', 'Fira Code', ui-monospace, monospace;
+  --sans: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* Subtle grid */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Aurora glow */
+body::after {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1200px;
+  height: 800px;
+  background: radial-gradient(ellipse, var(--accent-glow), transparent 60%);
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: .6;
+}
+
+main, nav, footer { position: relative; z-index: 1 }
+
+/* ── NAV ─────────────────────────────────────────── */
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 44px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: rgba(8,8,10,.78);
+  backdrop-filter: blur(14px);
+  z-index: 100;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  background: var(--accent);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+.brand-mark svg { width: 14px; height: 14px }
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.nav-links a {
+  color: var(--sub);
+  text-decoration: none;
+  transition: color .15s;
+}
+.nav-links a:hover { color: var(--text) }
+.nav-cta {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--bg);
+  background: var(--accent);
+  padding: 7px 14px;
+  border-radius: 7px;
+  text-decoration: none;
+  font-weight: 700;
+  transition: transform .15s, box-shadow .15s;
+}
+.nav-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px var(--accent-glow);
+}
+
+/* ── HERO ────────────────────────────────────────── */
+.hero {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 110px 44px 100px;
+  text-align: center;
+}
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  border-radius: 100px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--sub);
+  margin-bottom: 30px;
+}
+.hero-eyebrow .dot {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent);
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1 }
+  50% { opacity: .35 }
+}
+.hero h1 {
+  font-family: var(--sans);
+  font-size: clamp(48px, 6.5vw, 86px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.035em;
+  margin-bottom: 28px;
+}
+.hero h1 em {
+  font-style: italic;
+  font-weight: 800;
+  color: var(--accent);
+}
+.hero p.lead {
+  font-size: clamp(17px, 1.6vw, 21px);
+  color: var(--sub);
+  max-width: 640px;
+  margin: 0 auto 44px;
+  line-height: 1.55;
+}
+.hero p.lead strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.hero-actions {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 80px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 22px;
+  border-radius: 9px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all .15s;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px var(--accent-glow);
+}
+.btn-ghost {
+  background: var(--bg2);
+  color: var(--text);
+  border-color: var(--border2);
+}
+.btn-ghost:hover {
+  background: var(--bg3);
+  border-color: rgba(255,255,255,.22);
+}
+
+/* ── ANIMATED TERMINAL ──────────────────────────── */
+.terminal {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 30px 80px rgba(0,0,0,.4),
+    0 0 60px var(--accent-soft);
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+.term-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+.term-dot:nth-child(1) { background: #ff605c }
+.term-dot:nth-child(2) { background: #ffbd44 }
+.term-dot:nth-child(3) { background: #00ca4e }
+.term-title {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.terminal-body {
+  padding: 22px 24px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.85;
+  color: var(--sub);
+  text-align: left;
+  /* Fixed height so the page below never reflows as lines append.
+     Overflow hides any visual overshoot while the loop resets. */
+  height: 380px;
+  overflow: hidden;
+}
+.term-line { display: block; min-height: 1.85em }
+.term-prompt { color: var(--accent); margin-right: 8px }
+.term-cmd { color: var(--text) }
+.term-out { color: var(--sub) }
+.term-url { color: var(--blue) }
+.term-arrow { color: var(--accent); font-weight: 700 }
+.term-ok { color: var(--green) }
+.term-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: cursor 1s step-end infinite;
+}
+@keyframes cursor {
+  0%, 50% { opacity: 1 }
+  51%, 100% { opacity: 0 }
+}
+
+/* ── SECTIONS ─────────────────────────────────── */
+section {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 44px 120px;
+}
+.section-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+  text-align: center;
+}
+.section-title {
+  font-family: var(--sans);
+  font-size: clamp(32px, 3.6vw, 48px);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -.025em;
+  text-align: center;
+  margin-bottom: 18px;
+}
+.section-title em {
+  font-style: italic;
+  font-weight: 700;
+  color: var(--accent);
+}
+.section-sub {
+  text-align: center;
+  color: var(--sub);
+  font-size: 16px;
+  max-width: 520px;
+  margin: 0 auto 56px;
+  line-height: 1.6;
+}
+
+/* ── SCENARIOS ───────────────────────────────── */
+.scenarios {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+.scenario {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 24px;
+  transition: transform .2s, border-color .2s, box-shadow .2s;
+}
+.scenario:hover {
+  transform: translateY(-3px);
+  border-color: var(--border2);
+  box-shadow: 0 18px 40px rgba(0,0,0,.3);
+}
+.scenario-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(94,240,192,.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.scenario-icon svg { width: 18px; height: 18px; stroke: var(--accent) }
+.scenario h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  font-family: var(--sans);
+}
+.scenario p {
+  font-size: 13.5px;
+  color: var(--sub);
+  margin-bottom: 14px;
+  line-height: 1.55;
+}
+.scenario code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: var(--accent);
+}
+
+/* ── SETUP (vertical stack with snippet cards) ────────────────────────── */
+.setup-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.setup-block {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 28px 22px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.setup-block:hover {
+  border-color: var(--border2);
+  box-shadow: 0 12px 30px rgba(0,0,0,.25);
+}
+.setup-block-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.setup-num {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid rgba(94,240,192,.25);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+.setup-block-head h3 {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.setup-block-head p {
+  font-size: 13.5px;
+  color: var(--sub);
+  line-height: 1.6;
+}
+.setup-tabs-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  margin-left: 44px;
+}
+.setup-tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.setup-tab.active {
+  color: var(--accent);
+  border-color: rgba(94,240,192,.35);
+  background: var(--accent-soft);
+}
+.setup-tab:hover:not(.active) {
+  color: var(--sub);
+  border-color: var(--border2);
+}
+.setup-snippet {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-left: 44px;
+  overflow: hidden;
+}
+.setup-snippet pre {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.8;
+  padding: 18px 22px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre;
+}
+.setup-snippet pre .op { color: var(--accent); }
+.setup-note {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 44px;
+  margin-top: 12px;
+}
+.setup-note a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(94,240,192,.25);
+}
+.setup-note a:hover {
+  border-bottom-color: var(--accent);
+}
+
+/* ── COMPARISON ─────────────────────────── */
+.compare {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  font-family: var(--sans);
+}
+.compare th, .compare td {
+  padding: 12px 18px;
+  font-size: 13.5px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.compare th {
+  background: var(--bg3);
+  color: var(--sub);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.compare th.us {
+  color: var(--accent);
+  border-bottom: 2px solid rgba(94,240,192,.3);
+}
+.compare td { background: var(--bg2); color: var(--sub) }
+.compare td:first-child { color: var(--text); font-weight: 500 }
+.compare td.us { background: var(--accent-soft); color: var(--accent) }
+.compare tr:last-child td { border-bottom: none }
+.tick { color: var(--green) }
+.cross { color: var(--muted) }
+.partial { color: var(--amber) }
+
+/* ── CTA ─────────────────────────────── */
+.cta {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 44px 130px;
+}
+.cta-box {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 18px;
+  padding: 70px 50px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.cta-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+.cta-box::after {
+  content: '';
+  position: absolute;
+  top: -50px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  height: 100px;
+  background: radial-gradient(ellipse, var(--accent-glow), transparent 70%);
+  pointer-events: none;
+}
+.cta-box h2 {
+  font-family: var(--sans);
+  font-size: clamp(34px, 4.2vw, 52px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -.025em;
+  margin-bottom: 16px;
+}
+.cta-box h2 em { font-style: italic; font-weight: 700; color: var(--accent) }
+.cta-box p {
+  font-size: 16px;
+  color: var(--sub);
+  max-width: 420px;
+  margin: 0 auto 38px;
+  line-height: 1.6;
+}
+.cta-actions {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ── FOOTER ──────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 32px 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.footer-links { display: flex; gap: 26px }
+.footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color .15s;
+}
+.footer-links a:hover { color: var(--sub) }
+
+/* ── REVEAL ─────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .55s ease, transform .55s ease;
+}
+.reveal.in { opacity: 1; transform: translateY(0) }
+
+/* ── RESPONSIVE ───────────────────────── */
+@media (max-width: 720px) {
+  nav { padding: 16px 20px }
+  .nav-links { display: none }
+  .hero { padding: 70px 20px 70px }
+  .terminal-body { padding: 18px 18px; font-size: 12px; height: 320px }
+  section { padding: 0 20px 90px }
+  .setup-block { padding: 22px 20px }
+  .setup-block-head { gap: 12px }
+  .setup-tabs-row,
+  .setup-snippet,
+  .setup-note { margin-left: 0 }
+  .cta-box { padding: 50px 24px }
+  .compare th, .compare td { padding: 10px 12px; font-size: 12px }
+  footer { padding: 22px 20px; flex-direction: column; align-items: flex-start }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV ─────────────────────────────────────── -->
+<nav>
+  <a href="/tunnd/" class="brand">
+    <span class="brand-mark">
+      <svg viewBox="0 0 14 14" fill="none">
+        <path d="M2 11L7 3L12 11" stroke="#08080a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    tunnd
+  </a>
+  <div class="nav-links">
+    <a href="/tunnd/getting-started/quick-start/">Docs</a>
+    <a href="https://github.com/elvonpiko/tunnd">GitHub</a>
+    <a href="#scenarios">Scenarios</a>
+    <a href="#setup">Self-host</a>
+  </div>
+  <a href="/tunnd/getting-started/quick-start/" class="nav-cta">Get started →</a>
+</nav>
+
+<!-- HERO ─────────────────────────────────────── -->
+<main class="hero">
+  <div class="hero-eyebrow">
+    <span class="dot"></span>
+    Open-source · Self-hosted · v1.0
+  </div>
+
+  <h1>
+    Your tunnel.<br>
+    Your <em>infra.</em>
+  </h1>
+
+  <p class="lead">
+    Tunnd is the <strong>self-hosted ngrok alternative</strong>.<br>
+    Expose any HTTP, WebSocket, or raw TCP service in one command — on a VPS you own, with no monthly bills, no rate limits, no third party in your traffic.
+  </p>
+
+  <div class="hero-actions">
+    <a href="#setup" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      Self-host in 60 seconds
+    </a>
+    <a href="https://github.com/elvonpiko/tunnd" class="btn btn-ghost">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-1.96c-3.2.7-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.25 3.34.96.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.16 1.18a10.96 10.96 0 0 1 5.74 0c2.2-1.49 3.16-1.18 3.16-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.7 5.39-5.27 5.68.41.36.78 1.06.78 2.14v3.18c0 .31.21.68.79.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
+      Star on GitHub
+    </a>
+  </div>
+
+  <!-- Animated terminal -->
+  <div class="terminal">
+    <div class="terminal-bar">
+      <span class="term-dot"></span>
+      <span class="term-dot"></span>
+      <span class="term-dot"></span>
+      <span class="term-title">~ tunnd</span>
+    </div>
+    <div class="terminal-body" id="termBody"></div>
+  </div>
+</main>
+
+<!-- SCENARIOS ─────────────────────────────── -->
+<section id="scenarios">
+  <div class="section-eyebrow reveal">What you can tunnel</div>
+  <h2 class="section-title reveal">Anything that speaks <em>HTTP or TCP</em>.</h2>
+  <p class="section-sub reveal">One binary, three shapes. Pick yours.</p>
+
+  <div class="scenarios">
+
+    <div class="scenario reveal">
+      <div class="scenario-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10"/><path d="M12 2a15 15 0 0 0-4 10 15 15 0 0 0 4 10"/></svg>
+      </div>
+      <h3>HTTP / HTTPS apps</h3>
+      <p>Express, Vite, Django, Rails, anything. Get a public HTTPS URL in seconds. Streaming and SSE responses pass through with flushes preserved.</p>
+      <code>tunnd http 3000</code>
+    </div>
+
+    <div class="scenario reveal">
+      <div class="scenario-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/><path d="M5 5l7 7-7 7"/></svg>
+      </div>
+      <h3>WebSockets</h3>
+      <p>HMR, chat, live dashboards. HTTP upgrades pass through transparently — no flags, no config.</p>
+      <code>tunnd http 3000   # /ws works</code>
+    </div>
+
+    <div class="scenario reveal">
+      <div class="scenario-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      </div>
+      <h3>Raw TCP</h3>
+      <p>Postgres, Redis, SSH, anything that speaks bytes. Public TCP port allocated automatically.</p>
+      <code>tunnd tcp 5432</code>
+    </div>
+
+  </div>
+</section>
+
+<!-- SELF-HOST SETUP ─────────────────────────── -->
+<section id="setup">
+  <div class="section-eyebrow reveal">Self-hosted</div>
+  <h2 class="section-title reveal">Up and running in <em>under a minute</em>.</h2>
+  <p class="section-sub reveal">One VPS, one DNS record, one command. Then never pay a tunnel bill again.</p>
+
+  <div class="setup-stack">
+
+    <!-- Step 1: server -->
+    <div class="setup-block reveal">
+      <div class="setup-block-head">
+        <span class="setup-num">1</span>
+        <div>
+          <h3>Run the server on your VPS</h3>
+          <p>Add a wildcard DNS record (<code>*.tunnd.yourdomain.com → vps-ip</code>), then run one command. Installs the binary, requests a Let's Encrypt cert, starts a systemd service.</p>
+        </div>
+      </div>
+      <div class="setup-snippet">
+<pre>curl -fsSL https://raw.githubusercontent.com/elvonpiko/tunnd/main/setup.sh <span class="op">|</span> sudo bash</pre>
+      </div>
+      <p class="setup-note">Prefer Docker, custom TLS, or running behind Caddy? See the <a href="/tunnd/getting-started/server-deployment/">deployment guide</a>.</p>
+    </div>
+
+    <!-- Step 2: client -->
+    <div class="setup-block reveal">
+      <div class="setup-block-head">
+        <span class="setup-num">2</span>
+        <div>
+          <h3>Install the client and tunnel</h3>
+          <p>One command on macOS, Linux, or Windows. Run <code>tunnd setup</code> once to point at your server and paste your auth token from the dashboard.</p>
+        </div>
+      </div>
+      <div class="setup-tabs-row">
+        <button class="setup-tab active" data-pane="unix">macOS / Linux</button>
+        <button class="setup-tab" data-pane="windows">Windows</button>
+      </div>
+      <div class="setup-snippet" id="pane-unix">
+<pre>curl -fsSL https://raw.githubusercontent.com/elvonpiko/tunnd/main/install.sh <span class="op">|</span> bash
+tunnd setup
+tunnd http 3000</pre>
+      </div>
+      <div class="setup-snippet" id="pane-windows" style="display:none">
+<pre>iwr -useb https://raw.githubusercontent.com/elvonpiko/tunnd/main/install.ps1 <span class="op">|</span> iex
+tunnd setup
+tunnd http 3000</pre>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- COMPARISON ────────────────────────────── -->
+<section>
+  <div class="section-eyebrow reveal">Honestly</div>
+  <h2 class="section-title reveal">How <em>Tunnd</em> stacks up.</h2>
+  <p class="section-sub reveal">No marketing math. Just what you actually get.</p>
+
+  <table class="compare reveal">
+    <thead>
+      <tr>
+        <th></th>
+        <th class="us">Tunnd</th>
+        <th>ngrok free</th>
+        <th>Cloudflare Tunnel</th>
+        <th>frp</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Self-hosted</td><td class="us"><span class="tick">✓</span></td><td><span class="cross">✗</span></td><td><span class="partial">partial</span></td><td><span class="tick">✓</span></td></tr>
+      <tr><td>Auto HTTPS</td><td class="us"><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="cross">manual</span></td></tr>
+      <tr><td>Custom subdomain</td><td class="us"><span class="tick">✓</span></td><td><span class="cross">paid</span></td><td><span class="tick">✓</span></td><td><span class="partial">manual</span></td></tr>
+      <tr><td>Unlimited tunnels</td><td class="us"><span class="tick">✓</span></td><td><span class="cross">1 only</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td></tr>
+      <tr><td>WebSocket / SSE</td><td class="us"><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td></tr>
+      <tr><td>Raw TCP</td><td class="us"><span class="tick">✓</span></td><td><span class="cross">paid</span></td><td><span class="cross">no</span></td><td><span class="tick">✓</span></td></tr>
+      <tr><td>Live request inspector</td><td class="us"><span class="tick">built-in</span></td><td><span class="tick">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
+      <tr><td>Admin dashboard</td><td class="us"><span class="tick">✓</span></td><td><span class="partial">limited</span></td><td><span class="tick">CF dashboard</span></td><td><span class="cross">✗</span></td></tr>
+      <tr><td>Monthly cost</td><td class="us"><span class="tick">VPS only</span></td><td>$10–20</td><td>free tier</td><td>free</td></tr>
+      <tr><td>Your traffic stays yours</td><td class="us"><span class="tick">✓</span></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td><td><span class="tick">✓</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CTA ─────────────────────────────────── -->
+<section class="cta">
+  <div class="cta-box reveal">
+    <h2>Stop renting <em>tunnels.</em></h2>
+    <p>Own your bytes. Run Tunnd on a VPS you already pay for and forget the monthly bills.</p>
+    <div class="cta-actions">
+      <a href="/tunnd/getting-started/quick-start/" class="btn btn-primary">Read the quick start →</a>
+      <a href="https://github.com/elvonpiko/tunnd" class="btn btn-ghost">GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div>© 2026 · Tunnd · MIT licensed</div>
+  <div class="footer-links">
+    <a href="/tunnd/getting-started/quick-start/">Docs</a>
+    <a href="https://github.com/elvonpiko/tunnd">GitHub</a>
+    <a href="https://github.com/elvonpiko/tunnd/issues">Issues</a>
+    <a href="https://github.com/elvonpiko/tunnd/releases">Releases</a>
+  </div>
+</footer>
+
+<script>
+// ── Animated terminal ──────────────────────────────
+const lines = [
+  { t: 'cmd', text: 'tunnd setup' },
+  { t: 'out', text: '  ▲  Tunnd Setup' },
+  { t: 'out', text: '  Server: wss://tunnd.yourdomain.com  ✓' },
+  { t: 'out', text: '  Token:  tnnd_••••••••••••••  ✓' },
+  { t: 'blank', text: '' },
+  { t: 'cmd', text: 'tunnd http 3000' },
+  { t: 'out', text: '  ▲  Tunnd' },
+  { t: 'out', text: '  <span class="term-arrow">→</span> <span class="term-url">https://brave-river.tunnd.yourdomain.com</span> → localhost:3000' },
+  { t: 'out', text: '  Inspector  http://localhost:4040' },
+  { t: 'blank', text: '' },
+  { t: 'cmd', text: 'tunnd tcp 5432' },
+  { t: 'out', text: '  ▲  Tunnd' },
+  { t: 'out', text: '  <span class="term-arrow">→</span> <span class="term-url">tcp://tunnd.yourdomain.com:20000</span> → localhost:5432 (TCP)' },
+];
+
+const termBody = document.getElementById('termBody');
+
+function makeLine(line) {
+  const el = document.createElement('span');
+  el.className = 'term-line';
+  if (line.t === 'cmd') {
+    el.innerHTML = `<span class="term-prompt">$</span><span class="term-cmd">${line.text}</span>`;
+  } else if (line.t === 'blank') {
+    el.innerHTML = '&nbsp;';
+  } else {
+    el.innerHTML = `<span class="term-out">${line.text}</span>`;
+  }
+  return el;
+}
+
+async function typeLines() {
+  termBody.innerHTML = '';
+  const cursor = document.createElement('span');
+  cursor.className = 'term-cursor';
+
+  for (const line of lines) {
+    const el = makeLine(line);
+    termBody.appendChild(el);
+    if (line.t === 'cmd') {
+      // typewriter effect on commands
+      const fullText = line.text;
+      const span = el.querySelector('.term-cmd');
+      span.textContent = '';
+      el.appendChild(cursor);
+      for (let i = 0; i < fullText.length; i++) {
+        span.textContent += fullText[i];
+        await sleep(35 + Math.random() * 35);
+      }
+      cursor.remove();
+      await sleep(280);
+    } else {
+      await sleep(70);
+    }
+  }
+  termBody.appendChild(cursor);
+
+  // restart loop
+  await sleep(2400);
+  typeLines();
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+typeLines();
+
+// ── Setup OS tabs (macOS-Linux / Windows) ─────────────────
+document.querySelectorAll('.setup-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const pane = tab.dataset.pane;
+    // Limit toggling to the same group of tabs (so adding more groups
+    // later won't cross-talk).
+    const group = tab.parentElement;
+    group.querySelectorAll('.setup-tab').forEach(t => t.classList.toggle('active', t === tab));
+    // Swap snippet visibility for sibling panes.
+    const block = group.parentElement;
+    block.querySelectorAll('.setup-snippet').forEach(p => {
+      p.style.display = (p.id === 'pane-' + pane) ? 'block' : 'none';
+    });
+  });
+});
+
+// ── Reveal on scroll ──────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('in');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

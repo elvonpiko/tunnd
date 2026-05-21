@@ -1,0 +1,396 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Tunnd theme for Starlight — matches the landing page palette.
+   Mint (#5ef0c0) accent on near-black, Inter for everything (heavy
+   weights for display headings), Geist Mono for code.
+   ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  --tunnd-mint: 153 87% 65%;
+  --tunnd-mint-glow: 153 87% 65% / .2;
+  --tunnd-mint-soft: 153 87% 65% / .08;
+
+  --sl-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sl-font-mono: 'Geist Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* Smaller, more focused content width */
+  --sl-content-width: 50rem;
+
+  /* Slightly larger code text for readability */
+  --sl-text-code: 0.875rem;
+}
+
+/* ── Dark theme palette (default) ───────────────────────────────────── */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: hsl(153 60% 18%);
+  --sl-color-accent: hsl(var(--tunnd-mint));
+  --sl-color-accent-high: hsl(153 90% 80%);
+
+  --sl-color-white: #f5f5f7;
+  --sl-color-gray-1: #d8d8de;
+  --sl-color-gray-2: #b1b1ba;
+  --sl-color-gray-3: #8a8a93;
+  --sl-color-gray-4: #5b5b66;
+  --sl-color-gray-5: #2d2d33;
+  --sl-color-gray-6: #1a1a1e;
+  --sl-color-black: #08080a;
+
+  --sl-color-bg: #08080a;
+  --sl-color-bg-nav: rgba(8, 8, 10, 0.78);
+  --sl-color-bg-sidebar: #0a0a0d;
+  --sl-color-bg-inline-code: hsl(var(--tunnd-mint-soft));
+  --sl-color-text: var(--sl-color-gray-1);
+  --sl-color-text-accent: var(--sl-color-accent);
+  --sl-color-text-invert: var(--sl-color-black);
+
+  --sl-color-hairline: rgba(255, 255, 255, 0.07);
+  --sl-color-hairline-light: rgba(255, 255, 255, 0.04);
+  --sl-color-hairline-shade: rgba(255, 255, 255, 0.13);
+}
+
+/* ── Light theme — kept secondary, but readable ─────────────────────── */
+:root[data-theme='light'] {
+  --sl-color-accent-low: hsl(153 70% 90%);
+  --sl-color-accent: hsl(155 60% 35%);
+  --sl-color-accent-high: hsl(155 70% 22%);
+
+  --sl-color-white: #08080a;
+  --sl-color-gray-1: #1d1d22;
+  --sl-color-gray-2: #3d3d46;
+  --sl-color-gray-3: #5b5b66;
+  --sl-color-gray-4: #8a8a93;
+  --sl-color-gray-5: #d8d8de;
+  --sl-color-gray-6: #f0f0f3;
+  --sl-color-gray-7: #f8f8fa;
+  --sl-color-black: #ffffff;
+
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: rgba(255, 255, 255, 0.78);
+  --sl-color-bg-sidebar: #fafafb;
+  --sl-color-text: var(--sl-color-gray-1);
+  --sl-color-text-accent: var(--sl-color-accent);
+
+  --sl-color-hairline: rgba(0, 0, 0, 0.08);
+  --sl-color-hairline-light: rgba(0, 0, 0, 0.04);
+  --sl-color-hairline-shade: rgba(0, 0, 0, 0.16);
+}
+
+/* ── Site title — wordmark with tighter weight ──────────────────────── */
+.site-title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-size: 1.05rem;
+}
+
+/* Aurora glow behind the page header — subtle, only in dark mode */
+:root[data-theme='dark'] body::before {
+  content: '';
+  position: fixed;
+  top: -250px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1100px;
+  height: 600px;
+  background: radial-gradient(
+    ellipse,
+    hsl(var(--tunnd-mint-glow)),
+    transparent 60%
+  );
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.45;
+}
+
+/* Make sure content sits above the glow */
+body > * { position: relative; z-index: 1; }
+
+/* ── Hero on the landing page ──────────────────────────────────────── */
+.hero {
+  padding: 4rem 0 3rem;
+  text-align: center;
+  position: relative;
+}
+
+.hero h1 {
+  font-family: var(--sl-font) !important;
+  font-weight: 800 !important;
+  font-size: clamp(2.4rem, 5.5vw, 4rem) !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.035em !important;
+  color: var(--sl-color-white) !important;
+  margin-bottom: 1.5rem !important;
+}
+
+.hero h1 em,
+.hero h1 .accent {
+  font-style: italic;
+  color: var(--sl-color-accent);
+}
+
+.hero .tagline {
+  color: var(--sl-color-gray-2) !important;
+  font-size: 1.05rem !important;
+  max-width: 38rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Buttons (CTAs in the hero) ────────────────────────────────────── */
+.action.primary {
+  background: var(--sl-color-accent) !important;
+  color: var(--sl-color-black) !important;
+  border-color: var(--sl-color-accent) !important;
+  font-weight: 600 !important;
+  transition: transform 0.15s, box-shadow 0.15s !important;
+  font-family: var(--sl-font-mono) !important;
+  font-size: 0.85rem !important;
+  letter-spacing: 0.01em;
+}
+.action.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px hsl(var(--tunnd-mint-glow));
+}
+
+.action.secondary,
+.action.minimal {
+  border: 1px solid var(--sl-color-hairline-shade) !important;
+  background: transparent !important;
+  color: var(--sl-color-white) !important;
+  font-weight: 500 !important;
+  font-family: var(--sl-font-mono) !important;
+  font-size: 0.85rem !important;
+}
+.action.secondary:hover,
+.action.minimal:hover {
+  background: var(--sl-color-gray-6) !important;
+}
+
+/* ── Typography in prose ──────────────────────────────────────────── */
+.sl-markdown-content {
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.sl-markdown-content h1 {
+  font-family: var(--sl-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.025em;
+  font-size: 2.2rem !important;
+  line-height: 1.15;
+  margin-bottom: 0.8rem !important;
+}
+
+.sl-markdown-content h2 {
+  font-family: var(--sl-font) !important;
+  font-weight: 700 !important;
+  font-size: 1.6rem !important;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+  border-bottom: 1px solid var(--sl-color-hairline);
+  padding-bottom: 0.5rem;
+  margin-top: 2.6rem !important;
+}
+
+.sl-markdown-content h2 em,
+.sl-markdown-content h1 em {
+  font-style: italic;
+  color: var(--sl-color-accent);
+}
+
+.sl-markdown-content h3 {
+  font-weight: 600;
+  font-size: 1.15rem !important;
+  letter-spacing: -0.005em;
+  font-family: var(--sl-font);
+  margin-top: 1.8rem !important;
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content h4 {
+  font-weight: 600;
+  font-size: 0.98rem !important;
+  letter-spacing: 0;
+  font-family: var(--sl-font);
+  color: var(--sl-color-gray-1);
+}
+
+/* Tighten the gap between an hr and the heading that follows it */
+.sl-markdown-content hr + h2,
+.sl-markdown-content hr + h3 {
+  margin-top: 1.6rem !important;
+}
+
+/* Soften the <hr> styling — it's used as a section break in our docs */
+.sl-markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--sl-color-hairline);
+  margin: 2rem 0;
+}
+
+.sl-markdown-content code {
+  background: hsl(var(--tunnd-mint-soft)) !important;
+  border: 1px solid hsl(var(--tunnd-mint-glow)) !important;
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+  color: var(--sl-color-accent);
+}
+
+.sl-markdown-content pre {
+  border: 1px solid var(--sl-color-hairline) !important;
+  border-radius: 10px !important;
+  background: var(--sl-color-gray-6) !important;
+}
+.sl-markdown-content pre code {
+  background: transparent !important;
+  border: none !important;
+  color: var(--sl-color-gray-1);
+}
+
+.sl-markdown-content a {
+  color: var(--sl-color-accent);
+  text-decoration: none;
+  border-bottom: 1px solid hsl(var(--tunnd-mint-glow));
+  transition: border-color 0.15s, color 0.15s;
+}
+.sl-markdown-content a:hover {
+  border-bottom-color: var(--sl-color-accent);
+}
+
+/* ── Tables ─────────────────────────────────────────────────────── */
+.sl-markdown-content table {
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sl-markdown-content th {
+  background: var(--sl-color-gray-6);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-2);
+}
+.sl-markdown-content td,
+.sl-markdown-content th {
+  border-color: var(--sl-color-hairline) !important;
+  padding: 0.6rem 0.9rem !important;
+}
+
+/* ── Sidebar — minimal pills, accent on active ───────────────────── */
+.sidebar-content a[aria-current='page'] {
+  background: hsl(var(--tunnd-mint-soft));
+  color: var(--sl-color-accent) !important;
+  border-radius: 6px;
+}
+
+.sidebar-content .group-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+  font-weight: 600;
+}
+
+/* ── On-this-page outline — subtle accent indicator ──────────────── */
+starlight-toc nav a[aria-current='true'] {
+  color: var(--sl-color-accent) !important;
+  border-color: var(--sl-color-accent) !important;
+}
+
+/* ── Header / nav glassiness ────────────────────────────────────── */
+.header {
+  backdrop-filter: blur(14px);
+  background: var(--sl-color-bg-nav) !important;
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+/* ── Card grids on home page (Starlight CardGrid component) ────── */
+.card {
+  border-color: var(--sl-color-hairline) !important;
+  border-radius: 12px !important;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s !important;
+}
+.card:hover {
+  transform: translateY(-3px);
+  border-color: var(--sl-color-hairline-shade) !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
+}
+.card .icon {
+  color: var(--sl-color-accent) !important;
+  background: hsl(var(--tunnd-mint-soft)) !important;
+  border-radius: 8px;
+  padding: 0.4rem;
+}
+.card .title {
+  font-family: var(--sl-font);
+  font-weight: 600 !important;
+  color: var(--sl-color-white) !important;
+}
+
+/* ── Asides (note, tip, caution, danger) ────────────────────────── */
+.starlight-aside {
+  border-radius: 10px !important;
+  border-width: 1px !important;
+  border-left-width: 3px !important;
+}
+.starlight-aside--tip {
+  border-color: hsl(var(--tunnd-mint-glow)) !important;
+  border-left-color: var(--sl-color-accent) !important;
+  background: hsl(var(--tunnd-mint-soft)) !important;
+}
+
+/* ── Search modal ───────────────────────────────────────────────── */
+[data-pagefind-ui] {
+  --pagefind-ui-primary: hsl(var(--tunnd-mint));
+  --pagefind-ui-text: var(--sl-color-text);
+  --pagefind-ui-background: var(--sl-color-bg);
+  --pagefind-ui-border: var(--sl-color-hairline);
+  --pagefind-ui-border-radius: 10px;
+  --pagefind-ui-font: var(--sl-font);
+}
+
+/* ── Fine-grained tweaks ────────────────────────────────────────── */
+.sl-markdown-content blockquote {
+  border-left: 3px solid var(--sl-color-accent);
+  background: hsl(var(--tunnd-mint-soft));
+  border-radius: 0 8px 8px 0;
+  padding: 0.6rem 1rem;
+  color: var(--sl-color-gray-1);
+}
+
+/* Custom hero: a pinned terminal-styled lead under the H1 */
+.hero-terminal {
+  margin: 2rem auto 0;
+  max-width: 38rem;
+  background: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-hairline-shade);
+  border-radius: 10px;
+  font-family: var(--sl-font-mono);
+  font-size: 0.85rem;
+  text-align: left;
+  overflow: hidden;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.35),
+    0 0 60px hsl(var(--tunnd-mint-soft));
+}
+.hero-terminal-head {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sl-color-hairline);
+  background: var(--sl-color-gray-5);
+}
+.hero-terminal-head span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sl-color-gray-3);
+}
+.hero-terminal-head span:nth-child(1) { background: #ff605c; }
+.hero-terminal-head span:nth-child(2) { background: #ffbd44; }
+.hero-terminal-head span:nth-child(3) { background: #00ca4e; }
+.hero-terminal-body { padding: 14px 18px; line-height: 1.85; color: var(--sl-color-gray-2); }
+.hero-terminal-body .prompt { color: var(--sl-color-accent); margin-right: 8px; }
+.hero-terminal-body .cmd { color: var(--sl-color-white); }
+.hero-terminal-body .url { color: #60a5fa; }
+.hero-terminal-body .arrow { color: var(--sl-color-accent); font-weight: 700; }
