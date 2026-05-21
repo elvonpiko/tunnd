@@ -1,0 +1,209 @@
+name: Docker Build & Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/tunnd-server
+
+jobs:
+  # ── Docker multi-architecture build and push ────────────────────────────────
+  docker:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Set up QEMU for cross-compilation (required for arm64 on amd64 runners)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Set up Docker Buildx for multi-architecture builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Authenticate to GitHub Container Registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract metadata: semver tags + "latest" from the Git tag
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      # Build for linux/amd64 and linux/arm64, push to ghcr.io
+      # Uses GitHub Actions cache to speed up subsequent builds
+      - name: Build and push multi-architecture image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers from/to the registry for faster builds
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+  # ── Vulnerability scanning ──────────────────────────────────────────────────
+  scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: docker
+    permissions:
+      contents: read
+      packages: read
+      # Required to upload SARIF results to GitHub Security tab
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate to pull the image that was just pushed
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract the semver tag so we scan the exact image that was built
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+
+      # Scan the published image for vulnerabilities.
+      # Fails the job if any HIGH or CRITICAL CVEs are found.
+      # Results are also uploaded to the GitHub Security tab as SARIF.
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: sarif
+          output: trivy-results.sarif
+          # Fail the pipeline on HIGH or CRITICAL vulnerabilities
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      # Upload SARIF output so findings appear in the GitHub Security tab
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        # Always upload results, even when Trivy exits non-zero, so findings are visible
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ── Health check verification ───────────────────────────────────────────────
+  health-check:
+    name: Health Check Verification
+    runs-on: ubuntu-latest
+    needs: docker
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate to pull the image that was just pushed
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract the semver tag so we test the exact image that was built
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+
+      # Pull the amd64 image explicitly so it is available locally for docker run
+      - name: Pull image (linux/amd64)
+        run: docker pull --platform linux/amd64 ${{ steps.meta.outputs.tags }}
+
+      # Start the container with minimal test configuration.
+      # TUNND_DOMAIN and TUNND_ADMIN_PASSWORD are required by the server to start.
+      # Port 9091 (admin) is mapped to the host so we can reach /api/stats.
+      - name: Start test container
+        run: |
+          docker run -d \
+            --name tunnd-healthcheck-test \
+            --platform linux/amd64 \
+            -p 9091:9091 \
+            -e TUNND_DOMAIN=test.example.com \
+            -e TUNND_ADMIN_PASSWORD=testpassword123 \
+            ${{ steps.meta.outputs.tags }}
+
+      # Poll docker inspect until the container reports "healthy" or the
+      # 30-second timeout is reached. Fail the job if the deadline passes.
+      - name: Wait for container to become healthy
+        run: |
+          echo "Waiting for container to become healthy (timeout: 30s)..."
+          TIMEOUT=30
+          ELAPSED=0
+          INTERVAL=3
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' tunnd-healthcheck-test 2>/dev/null || echo "unknown")
+            echo "Health status after ${ELAPSED}s: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Container is healthy."
+              exit 0
+            fi
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          echo "ERROR: Container did not become healthy within ${TIMEOUT} seconds."
+          echo "--- Container logs ---"
+          docker logs tunnd-healthcheck-test
+          exit 1
+
+      # Verify the /api/stats endpoint returns HTTP 200.
+      # This confirms the health check endpoint is actually reachable.
+      - name: Verify /api/stats endpoint responds
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --user admin:testpassword123 \
+            http://localhost:9091/api/stats)
+          echo "HTTP status from /api/stats: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "ERROR: /api/stats returned HTTP $HTTP_STATUS, expected 200."
+            exit 1
+          fi
+          echo "Health check endpoint verified successfully."
+
+      # Always remove the test container to keep the runner clean,
+      # even if previous steps failed.
+      - name: Clean up test container
+        if: always()
+        run: |
+          docker stop tunnd-healthcheck-test || true
+          docker rm tunnd-healthcheck-test || true

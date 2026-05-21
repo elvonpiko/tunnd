@@ -1,0 +1,126 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-deploy.yml"
+
+# Allow only one concurrent deployment; cancel in-progress runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+# Grant GITHUB_TOKEN permissions for Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  # ── Build ─────────────────────────────────────────────────────────────────
+  build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: docs
+
+      - name: Build documentation site (Astro Starlight)
+        run: npm run build
+        working-directory: docs
+
+      # ── Link validation ───────────────────────────────────────────────────
+      # Catch broken internal links before they ship.
+      #
+      # Astro builds with `base: '/tunnd'` so all internal hrefs are written as
+      # `/tunnd/...` even though the on-disk dist tree is flat (e.g. dist/
+      # getting-started/quick-start/index.html). We strip the base prefix
+      # before resolving each href to a file in dist/.
+      - name: Validate internal links
+        run: |
+          DIST_DIR="docs/dist"
+          BASE="/tunnd"
+          BROKEN=""
+
+          while IFS= read -r html_file; do
+            hrefs=$(grep -oP 'href="\K/[^"#?]*' "$html_file" | sort -u || true)
+            for href in $hrefs; do
+              # Strip the base prefix so '/tunnd/foo/' → '/foo/'.
+              rel="${href#$BASE}"
+              [ -z "$rel" ] && rel="/"
+
+              target_html="${DIST_DIR}${rel}.html"
+              target_index="${DIST_DIR}${rel}/index.html"
+              target_exact="${DIST_DIR}${rel}"
+
+              if [ -f "$target_html" ] || [ -f "$target_index" ] || [ -f "$target_exact" ]; then
+                :
+              else
+                BROKEN="${BROKEN}\n  Source: ${html_file#$DIST_DIR/}  ->  Target: ${href}"
+              fi
+            done
+          done < <(find "$DIST_DIR" -name "*.html")
+
+          if [ -n "$BROKEN" ]; then
+            echo "::error::Broken internal links detected:"
+            printf "%b\n" "$BROKEN"
+            exit 1
+          fi
+
+          echo "All internal links are valid."
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+
+  # ── Deploy ────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Verify site is accessible
+        run: |
+          SITE_URL="${{ steps.deployment.outputs.page_url }}"
+          echo "Checking site accessibility at: $SITE_URL"
+
+          HTTP_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            --max-time 5 \
+            --retry 3 \
+            --retry-delay 2 \
+            "$SITE_URL")
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Site accessibility check failed. Expected HTTP 200, got HTTP $HTTP_STATUS for $SITE_URL"
+            exit 1
+          fi
+
+          echo "Site is accessible (HTTP $HTTP_STATUS)."
