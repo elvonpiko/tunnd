@@ -143,7 +143,6 @@ func TestDecodePayload_RejectsMalformedPayload(t *testing.T) {
 	}
 }
 
-
 func TestBinaryFrame_RoundTrip(t *testing.T) {
 	streamID := "12345678-1234-1234-1234-123456789abc" // 36 bytes
 	payload := []byte("the quick brown fox jumps over the lazy dog")

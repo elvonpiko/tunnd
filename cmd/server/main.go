@@ -181,8 +181,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	log.Info().Msg("shutting down gracefully…")
-	publicSrv.Shutdown(shutCtx)  //nolint:errcheck
-	adminSrv.Shutdown(shutCtx)   //nolint:errcheck
+	publicSrv.Shutdown(shutCtx) //nolint:errcheck
+	adminSrv.Shutdown(shutCtx)  //nolint:errcheck
 	log.Info().Msg("server stopped")
 	return nil
 }

@@ -137,8 +137,8 @@ func TestValidateAndSanitize_AcceptsValidLengths(t *testing.T) {
 	v := tunnel.NewSubdomainValidator(nil)
 
 	tests := []string{
-		"abc",                    // 3 characters (minimum)
-		"myapp",                  // typical length
+		"abc",                   // 3 characters (minimum)
+		"myapp",                 // typical length
 		strings.Repeat("a", 63), // 63 characters (maximum)
 	}
 
@@ -156,34 +156,34 @@ func TestValidateAndSanitize_RejectsInvalidCharacters(t *testing.T) {
 	v := tunnel.NewSubdomainValidator(nil)
 
 	tests := []string{
-		"my_app",     // underscore
-		"my.app",     // dot
-		"my app",     // space
-		"my@app",     // at sign
-		"my#app",     // hash
-		"my$app",     // dollar
-		"my%app",     // percent
-		"my&app",     // ampersand
-		"my*app",     // asterisk
-		"my+app",     // plus
-		"my=app",     // equals
-		"my!app",     // exclamation
-		"my?app",     // question mark
-		"my/app",     // slash
-		"my\\app",    // backslash
-		"my|app",     // pipe
-		"my[app]",    // brackets
-		"my{app}",    // braces
-		"my(app)",    // parentheses
-		"my<app>",    // angle brackets
-		"my\"app\"",  // quotes
-		"my'app'",    // single quotes
-		"my`app`",    // backticks
-		"my~app",     // tilde
-		"my^app",     // caret
-		"myapp;",     // semicolon
-		"myapp:",     // colon
-		"myapp,",     // comma
+		"my_app",    // underscore
+		"my.app",    // dot
+		"my app",    // space
+		"my@app",    // at sign
+		"my#app",    // hash
+		"my$app",    // dollar
+		"my%app",    // percent
+		"my&app",    // ampersand
+		"my*app",    // asterisk
+		"my+app",    // plus
+		"my=app",    // equals
+		"my!app",    // exclamation
+		"my?app",    // question mark
+		"my/app",    // slash
+		"my\\app",   // backslash
+		"my|app",    // pipe
+		"my[app]",   // brackets
+		"my{app}",   // braces
+		"my(app)",   // parentheses
+		"my<app>",   // angle brackets
+		"my\"app\"", // quotes
+		"my'app'",   // single quotes
+		"my`app`",   // backticks
+		"my~app",    // tilde
+		"my^app",    // caret
+		"myapp;",    // semicolon
+		"myapp:",    // colon
+		"myapp,",    // comma
 	}
 
 	for _, input := range tests {

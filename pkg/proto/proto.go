@@ -93,14 +93,14 @@ type ClosePayload struct {
 //
 // On the wire we send two kinds of frames over the WebSocket:
 //
-//   1. JSON envelopes — for control messages (rare, structured): register,
-//      registered, error, open, open_tcp, req_done, ping, pong, close.
-//      First byte is FrameKindJSON, remaining bytes are JSON of an Envelope.
+//  1. JSON envelopes — for control messages (rare, structured): register,
+//     registered, error, open, open_tcp, req_done, ping, pong, close.
+//     First byte is FrameKindJSON, remaining bytes are JSON of an Envelope.
 //
-//   2. Binary data frames — for raw stream bytes (frequent, large):
-//      First byte is FrameKindBinaryData, next 36 bytes are the stream UUID
-//      (ASCII), the rest is the raw payload. Saves 33% bandwidth (no base64)
-//      and avoids JSON parsing per chunk.
+//  2. Binary data frames — for raw stream bytes (frequent, large):
+//     First byte is FrameKindBinaryData, next 36 bytes are the stream UUID
+//     (ASCII), the rest is the raw payload. Saves 33% bandwidth (no base64)
+//     and avoids JSON parsing per chunk.
 const (
 	FrameKindJSON       byte = 0x01
 	FrameKindBinaryData byte = 0x02

@@ -158,11 +158,11 @@ func LoadServer(cfgFile string) (*Server, error) {
 		"tls_cert_file":         "TUNND_TLS_CERT_FILE",
 		"tls_key_file":          "TUNND_TLS_KEY_FILE",
 		"db_path":               "TUNND_DB_PATH",
-		"admin_password":         "TUNND_ADMIN_PASSWORD",
-		"reserved_subdomains":    "TUNND_RESERVED_SUBDOMAINS",
-		"max_tunnels_per_token":  "TUNND_MAX_TUNNELS_PER_TOKEN",
-		"tcp_min_port":           "TUNND_TCP_MIN_PORT",
-		"tcp_max_port":           "TUNND_TCP_MAX_PORT",
+		"admin_password":        "TUNND_ADMIN_PASSWORD",
+		"reserved_subdomains":   "TUNND_RESERVED_SUBDOMAINS",
+		"max_tunnels_per_token": "TUNND_MAX_TUNNELS_PER_TOKEN",
+		"tcp_min_port":          "TUNND_TCP_MIN_PORT",
+		"tcp_max_port":          "TUNND_TCP_MAX_PORT",
 		"log_level":             "TUNND_LOG_LEVEL",
 		"log_format":            "TUNND_LOG_FORMAT",
 	} {
@@ -293,15 +293,10 @@ func (s *Server) Validate() error {
 		)
 	}
 
-	// Validate admin_password — it is now optional at config level since
-	// the bootstrap flow sets it via the dashboard on first run.
-	// Only warn if explicitly set to a weak value.
-	if s.AdminPassword != "" {
-		weakDefaults := map[string]bool{"changeme": true, "admin": true, "changeme-please": true}
-		if weakDefaults[s.AdminPassword] || len(s.AdminPassword) < 12 {
-			// Leave the warning to the server startup code — just don't block startup.
-		}
-	}
+	// admin_password is optional at config level since the bootstrap flow
+	// sets it via the dashboard on first run. The server startup code is
+	// responsible for warning about weak / default values — Validate doesn't
+	// block startup on them.
 
 	// Validate optional field: log_level — apply default if invalid.
 	switch s.LogLevel {

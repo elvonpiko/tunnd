@@ -55,7 +55,7 @@ func loadConfig() (*clientConfig, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf(
-				"Tunnd is not set up yet.\n" +
+				"tunnd is not set up yet.\n" +
 					"  Run: tunnd setup",
 			)
 		}
@@ -871,6 +871,7 @@ func (tc *tunnelClient) driveTCPStream(conn *websocket.Conn, cs *clientStream) {
 	}
 	<-pumpDone
 }
+
 // deadlineWriter wraps a net.Conn and resets its write deadline before every Write.
 type deadlineWriter struct {
 	conn    net.Conn

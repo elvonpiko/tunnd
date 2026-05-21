@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
+
 	"github.com/elvonpiko/tunnd/internal/store"
 	"github.com/elvonpiko/tunnd/pkg/proto"
 )
@@ -737,9 +738,9 @@ func (r *Registry) handleUpgrade(w http.ResponseWriter, req *http.Request, sess 
 	// Drain anything the client buffered (rare, but be safe — there may be
 	// pipelined bytes after the Upgrade request line).
 	if n := brw.Reader.Buffered(); n > 0 {
-		buf, _ := brw.Reader.Peek(n)
+		buf, _ := brw.Peek(n)
 		_, _ = st.reqW.Write(buf)
-		_, _ = brw.Reader.Discard(n)
+		_, _ = brw.Discard(n)
 	}
 
 	// Bridge: inbound conn → stream req pipe (will be encoded as MsgData by pumpTCP).

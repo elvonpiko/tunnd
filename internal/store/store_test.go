@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/elvonpiko/tunnd/internal/store"
 )
 

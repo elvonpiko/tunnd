@@ -18,13 +18,13 @@ type DB struct {
 
 // Token is an auth token record.
 type Token struct {
-	ID          string
-	Value       string
-	Label       string
-	CreatedAt   time.Time
-	LastUsedAt  *time.Time
-	MaxTunnels  int
-	Enabled     bool
+	ID         string
+	Value      string
+	Label      string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	MaxTunnels int
+	Enabled    bool
 }
 
 // TunnelRecord is a historical tunnel entry.

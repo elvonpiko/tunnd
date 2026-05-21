@@ -13,6 +13,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
 	"github.com/elvonpiko/tunnd/internal/admin"
 	"github.com/elvonpiko/tunnd/internal/auth"
 	"github.com/elvonpiko/tunnd/internal/store"
@@ -263,7 +264,6 @@ func captureLog(t *testing.T) *bytes.Buffer {
 	return buf
 }
 
-
 // ── Task 12.4: Property test for security headers presence ────────────────────
 
 // adminEndpoints lists public/unauthenticated admin paths for header checks.
@@ -301,7 +301,6 @@ func TestSecurityHeaders_AllEndpoints_UnitVerification(t *testing.T) {
 	}
 }
 
-
 // TestProperty15_SecurityHeadersPresence is a property test using
 // testing/quick. It generates random (method, path) pairs for known admin
 // endpoints and verifies all required security headers appear in every response.
@@ -330,7 +329,6 @@ func TestProperty15_SecurityHeadersPresence(t *testing.T) {
 		t.Errorf("Property 15 failed: %v", err)
 	}
 }
-
 
 // ── Task 13.2: Unit tests for authentication logging ─────────────────────────
 
@@ -409,7 +407,6 @@ func TestAuthLogging_SuccessNotLogged(t *testing.T) {
 	}
 }
 
-
 // ── Task 13.3: Property test for authentication failure logging ───────────────
 
 // TestProperty14_AuthFailureLogging is a property test verifying that every
@@ -466,7 +463,6 @@ func TestProperty14_AuthFailureLogging(t *testing.T) {
 		t.Errorf("Property 14 failed: %v", err)
 	}
 }
-
 
 // ── Task 14.3: Property test for weak password warning ───────────────────────
 
@@ -537,7 +533,6 @@ func TestWeakPassword_StrongPasswordNoWarn(t *testing.T) {
 	}
 }
 
-
 // TestProperty16_WeakPasswordWarning is a property test verifying that any
 // password shorter than 12 characters or matching a default value produces a
 // warning message.
@@ -578,7 +573,6 @@ func TestProperty16_WeakPasswordWarning(t *testing.T) {
 		t.Errorf("Property 16 failed: %v", err)
 	}
 }
-
 
 // ── Task 15: Integration tests for admin security ─────────────────────────────
 
@@ -629,7 +623,6 @@ func TestIntegration_LoginPageServed(t *testing.T) {
 	}
 }
 
-
 // TestIntegration_SecurityHeadersOnAllAdminResponses verifies that every admin
 // endpoint—authenticated or not—includes all required security headers.
 // Validates: Requirements 7.10
@@ -637,9 +630,9 @@ func TestIntegration_SecurityHeadersOnAllAdminResponses(t *testing.T) {
 	h, _ := setup(t, "IntegrationPass123")
 
 	endpoints := []struct {
-		method   string
-		path     string
-		useAuth  bool
+		method  string
+		path    string
+		useAuth bool
 	}{
 		{"GET", "/api/stats", true},
 		{"GET", "/api/tunnels/active", true},
@@ -711,4 +704,3 @@ func TestIntegration_AuthFailureLogged(t *testing.T) {
 		t.Errorf("no log entry with source_ip found for login failure; log output:\n%s", output)
 	}
 }
-

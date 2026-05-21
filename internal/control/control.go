@@ -10,13 +10,14 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
+
 	"github.com/elvonpiko/tunnd/internal/auth"
 	"github.com/elvonpiko/tunnd/internal/tunnel"
 	"github.com/elvonpiko/tunnd/pkg/proto"
 )
 
 const (
-	writeWait      = 30 * time.Second  // increased from 10s — allows for slower connections
+	writeWait      = 30 * time.Second // increased from 10s — allows for slower connections
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 4 * 1024 * 1024 // 4 MiB per frame

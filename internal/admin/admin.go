@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
 	"github.com/elvonpiko/tunnd/internal/auth"
 	"github.com/elvonpiko/tunnd/internal/store"
 	"github.com/elvonpiko/tunnd/internal/tunnel"

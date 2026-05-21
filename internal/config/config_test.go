@@ -153,18 +153,18 @@ func TestLoadClient_CLIOverrides(t *testing.T) {
 func TestLoadClient_FileSearchOrder(t *testing.T) {
 	// Create a temporary directory structure for testing
 	tmpDir := t.TempDir()
-	
+
 	// Create config files in different locations with different values
 	localConfig := tmpDir + "/tunnd.yaml"
 	homeDir := tmpDir + "/home"
 	homeConfig := homeDir + "/.tunnd/tunnd.yaml"
 	etcDir := tmpDir + "/etc/tunnd"
 	etcConfig := etcDir + "/tunnd.yaml"
-	
+
 	// Create directories
 	os.MkdirAll(homeDir+"/.tunnd", 0755)
 	os.MkdirAll(etcDir, 0755)
-	
+
 	// Write config files with different subdomain values to identify which one is loaded
 	localYAML := `server_addr: wss://server.com
 token: tnnd_token
@@ -175,11 +175,11 @@ subdomain: home-config`
 	etcYAML := `server_addr: wss://server.com
 token: tnnd_token
 subdomain: etc-config`
-	
+
 	os.WriteFile(localConfig, []byte(localYAML), 0644)
 	os.WriteFile(homeConfig, []byte(homeYAML), 0644)
 	os.WriteFile(etcConfig, []byte(etcYAML), 0644)
-	
+
 	// Test 1: Explicit config file takes highest precedence
 	cfg, err := config.LoadClient(homeConfig, nil)
 	if err != nil {
@@ -188,13 +188,13 @@ subdomain: etc-config`
 	if cfg.Subdomain != "home-config" {
 		t.Errorf("With explicit config file, Subdomain = %q, want home-config", cfg.Subdomain)
 	}
-	
+
 	// Test 2: Local config file is used when no explicit config specified
 	// Change to tmpDir to make it the "current working directory" conceptually
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	
+
 	cfg, err = config.LoadClient("", nil)
 	if err != nil {
 		t.Fatalf("LoadClient with local config: %v", err)
@@ -207,11 +207,11 @@ subdomain: etc-config`
 func TestLoadServer_FileSearchOrder(t *testing.T) {
 	// Create a temporary directory structure for testing
 	tmpDir := t.TempDir()
-	
+
 	// Create config files in different locations with different values
 	localConfig := tmpDir + "/tunnd-server.yaml"
 	explicitConfig := tmpDir + "/custom-server.yaml"
-	
+
 	// Write config files with different log levels to identify which one is loaded.
 	// admin_password is required for validation to pass.
 	localYAML := `domain: tunnel.local.com
@@ -222,10 +222,10 @@ log_level: debug`
 http_port: 8080
 admin_password: explicitsecretpassword
 log_level: error`
-	
+
 	os.WriteFile(localConfig, []byte(localYAML), 0644)
 	os.WriteFile(explicitConfig, []byte(explicitYAML), 0644)
-	
+
 	// Test 1: Explicit config file takes highest precedence
 	cfg, err := config.LoadServer(explicitConfig)
 	if err != nil {
@@ -237,12 +237,12 @@ log_level: error`
 	if cfg.LogLevel != "error" {
 		t.Errorf("With explicit config file, LogLevel = %q, want error", cfg.LogLevel)
 	}
-	
+
 	// Test 2: Local config file is used when no explicit config specified
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
-	
+
 	cfg, err = config.LoadServer("")
 	if err != nil {
 		t.Fatalf("LoadServer with local config: %v", err)
@@ -258,19 +258,19 @@ log_level: error`
 func TestLoadClient_InvalidYAMLError(t *testing.T) {
 	tmpDir := t.TempDir()
 	invalidConfig := tmpDir + "/invalid.yaml"
-	
+
 	// Write syntactically invalid YAML
 	invalidYAML := `server_addr: wss://server.com
 token: tnnd_token
 subdomain: [unclosed array`
-	
+
 	os.WriteFile(invalidConfig, []byte(invalidYAML), 0644)
-	
+
 	_, err := config.LoadClient(invalidConfig, nil)
 	if err == nil {
 		t.Error("Expected error for invalid YAML, got nil")
 	}
-	
+
 	// Error message should contain the file path
 	if !contains(err.Error(), invalidConfig) {
 		t.Errorf("Error message should contain file path %q, got: %v", invalidConfig, err)
@@ -280,19 +280,19 @@ subdomain: [unclosed array`
 func TestLoadServer_InvalidYAMLError(t *testing.T) {
 	tmpDir := t.TempDir()
 	invalidConfig := tmpDir + "/invalid-server.yaml"
-	
+
 	// Write syntactically invalid YAML (malformed structure)
 	invalidYAML := `domain: tunnel.com
 http_port: 8080
 [invalid yaml structure`
-	
+
 	os.WriteFile(invalidConfig, []byte(invalidYAML), 0644)
-	
+
 	_, err := config.LoadServer(invalidConfig)
 	if err == nil {
 		t.Error("Expected error for invalid YAML, got nil")
 	}
-	
+
 	// Error message should indicate parsing failure
 	errMsg := err.Error()
 	if !contains(errMsg, "failed to") && !contains(errMsg, "parsing") && !contains(errMsg, "error") {
@@ -303,7 +303,7 @@ http_port: 8080
 func TestLoadClient_ConfigFilePrecedence(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := tmpDir + "/tunnd.yaml"
-	
+
 	// Write config file
 	configYAML := `server_addr: wss://file.server.com
 token: tnnd_file_token
@@ -311,19 +311,19 @@ subdomain: file-subdomain
 protocol: tcp
 inspector_port: 5050
 log_level: debug`
-	
+
 	os.WriteFile(configFile, []byte(configYAML), 0644)
-	
+
 	// Set environment variables that should be overridden by config file
 	t.Setenv("TUNND_SUBDOMAIN", "env-subdomain")
 	t.Setenv("TUNND_PROTOCOL", "http")
-	
+
 	// Load config - environment variables should override file values
 	cfg, err := config.LoadClient(configFile, nil)
 	if err != nil {
 		t.Fatalf("LoadClient: %v", err)
 	}
-	
+
 	// Environment variables should override config file
 	if cfg.Subdomain != "env-subdomain" {
 		t.Errorf("Subdomain = %q, want env-subdomain (ENV should override file)", cfg.Subdomain)
@@ -331,7 +331,7 @@ log_level: debug`
 	if cfg.Protocol != "http" {
 		t.Errorf("Protocol = %q, want http (ENV should override file)", cfg.Protocol)
 	}
-	
+
 	// Values not set in ENV should come from file
 	if cfg.ServerAddr != "wss://file.server.com" {
 		t.Errorf("ServerAddr = %q, want wss://file.server.com", cfg.ServerAddr)
@@ -351,7 +351,7 @@ func TestLoadClient_CompletePrecedenceOrder(t *testing.T) {
 	// This test verifies the complete precedence order: CLI > ENV > File > Defaults
 	tmpDir := t.TempDir()
 	configFile := tmpDir + "/tunnd.yaml"
-	
+
 	// Write config file with specific values
 	configYAML := `server_addr: wss://file.server.com
 token: tnnd_file_token
@@ -359,25 +359,25 @@ subdomain: file-subdomain
 protocol: tcp
 inspector_port: 5050
 log_level: debug`
-	
+
 	os.WriteFile(configFile, []byte(configYAML), 0644)
-	
+
 	// Set environment variables that should override file values
 	t.Setenv("TUNND_SERVER_ADDR", "wss://env.server.com")
 	t.Setenv("TUNND_SUBDOMAIN", "env-subdomain")
 	t.Setenv("TUNND_INSPECTOR_PORT", "6060")
-	
+
 	// CLI overrides should take highest precedence
 	cliOverrides := map[string]interface{}{
 		"subdomain":      "cli-subdomain",
 		"inspector_port": 7070,
 	}
-	
+
 	cfg, err := config.LoadClient(configFile, cliOverrides)
 	if err != nil {
 		t.Fatalf("LoadClient: %v", err)
 	}
-	
+
 	// Verify precedence order:
 	// 1. CLI overrides take highest precedence
 	if cfg.Subdomain != "cli-subdomain" {
@@ -386,12 +386,12 @@ log_level: debug`
 	if cfg.InspectorPort != 7070 {
 		t.Errorf("InspectorPort = %d, want 7070 (CLI should override ENV and file)", cfg.InspectorPort)
 	}
-	
+
 	// 2. ENV overrides file (for fields not in CLI overrides)
 	if cfg.ServerAddr != "wss://env.server.com" {
 		t.Errorf("ServerAddr = %q, want wss://env.server.com (ENV should override file)", cfg.ServerAddr)
 	}
-	
+
 	// 3. File values used when not in CLI or ENV
 	if cfg.Token != "tnnd_file_token" {
 		t.Errorf("Token = %q, want tnnd_file_token (should come from file)", cfg.Token)
@@ -409,17 +409,17 @@ func TestLoadClient_CLIOverridesEmptyValues(t *testing.T) {
 	t.Setenv("TUNND_SERVER_ADDR", "wss://server.com")
 	t.Setenv("TUNND_TOKEN", "tnnd_token")
 	t.Setenv("TUNND_SUBDOMAIN", "env-subdomain")
-	
+
 	// CLI override with empty string should still take precedence
 	cliOverrides := map[string]interface{}{
 		"subdomain": "",
 	}
-	
+
 	cfg, err := config.LoadClient("", cliOverrides)
 	if err != nil {
 		t.Fatalf("LoadClient: %v", err)
 	}
-	
+
 	// Empty string from CLI should override ENV value
 	if cfg.Subdomain != "" {
 		t.Errorf("Subdomain = %q, want empty string (CLI override should work with empty values)", cfg.Subdomain)
@@ -436,12 +436,12 @@ func TestLoadClient_CLIOverridesAllFields(t *testing.T) {
 		"inspector_port": 8080,
 		"log_level":      "error",
 	}
-	
+
 	cfg, err := config.LoadClient("", cliOverrides)
 	if err != nil {
 		t.Fatalf("LoadClient: %v", err)
 	}
-	
+
 	// Verify all CLI overrides are applied
 	if cfg.ServerAddr != "wss://cli.server.com" {
 		t.Errorf("ServerAddr = %q, want wss://cli.server.com", cfg.ServerAddr)
@@ -465,7 +465,7 @@ func TestLoadClient_CLIOverridesAllFields(t *testing.T) {
 
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
 }
 
