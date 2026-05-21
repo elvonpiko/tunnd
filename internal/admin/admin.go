@@ -86,6 +86,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) registerRoutes() {
+	// Health check (unauthenticated, no redirect, always 200 OK).
+	// Used by Docker HEALTHCHECK, k8s liveness/readiness probes, etc.
+	h.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
 	// Bootstrap setup (only active when no password is set)
 	h.mux.Handle("GET /setup", h.securityHeaders(http.HandlerFunc(h.serveSetup)))
 	h.mux.Handle("POST /setup", h.securityHeaders(http.HandlerFunc(h.handleSetup)))

@@ -32,7 +32,7 @@ services:
       - TUNND_LOG_LEVEL=info
       - TUNND_LOG_FORMAT=json
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/stats"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

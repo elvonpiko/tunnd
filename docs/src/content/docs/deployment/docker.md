@@ -125,7 +125,7 @@ docker compose down -v
 
 ## Health check
 
-The image includes a health check that polls `http://localhost:9091/api/stats`. Status shows `healthy` once the server is fully started (~10s).
+The image includes a health check that polls `http://localhost:9091/healthz` (an unauthenticated endpoint that returns `200 ok` whenever the server is alive). Status shows `healthy` once the server is fully started (~10s).
 
 ```bash
 docker inspect --format='{{.State.Health.Status}}' tunnd

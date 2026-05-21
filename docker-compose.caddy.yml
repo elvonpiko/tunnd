@@ -75,8 +75,8 @@ services:
           memory: 512M
 
     healthcheck:
-      # Check that the admin API is reachable and responding on the admin port
-      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/stats"]
+      # Check that the server is alive on the admin port
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/healthz"]
       # How often to run the health check
       interval: 30s
       # Maximum time to wait for a health check response
