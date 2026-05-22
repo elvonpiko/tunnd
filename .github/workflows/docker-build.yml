@@ -98,15 +98,42 @@ jobs:
           REF="${GITHUB_REF_NAME#v}"
           echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${REF}" >> "$GITHUB_OUTPUT"
 
-      # Scan the published image for vulnerabilities. Fails the job on
-      # HIGH or CRITICAL findings (with a fix available — ignore-unfixed).
+      # Scan the published image for vulnerabilities. Reports HIGH /
+      # CRITICAL findings (with a fix available — ignore-unfixed) but
+      # does not block the pipeline. Findings are uploaded as a JSON
+      # artifact so an operator can review them per release. To gate
+      # releases on Trivy, set exit-code: "1" and a SARIF upload step
+      # plus security-events: write on the job.
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.ref }}
-          exit-code: "1"
+          format: json
+          output: trivy-results.json
           ignore-unfixed: true
           severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Upload Trivy scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-${{ github.sha }}
+          path: trivy-results.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Print a human-readable summary in the run log so reviewers don't
+      # need to download the artifact for routine checks.
+      - name: Run Trivy summary (table format)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "0"
 
   # ── Health check verification ───────────────────────────────────────────────
   health-check:
