@@ -72,11 +72,13 @@ jobs:
     permissions:
       contents: read
       packages: read
-      # security-events: write would be needed to upload SARIF results to
-      # the GitHub Security tab, but on fresh repos without code scanning
-      # enabled, declaring the permission makes the runner refuse to even
-      # start the job. We instead let the upload step (below) run without
-      # that permission and continue-on-error past the harmless 403.
+      # We deliberately don't request security-events: write here. SARIF
+      # upload to the Security tab needs that permission, but on a repo
+      # without code scanning enabled (the default for fresh public
+      # repos) the YAML alone is enough for the runner to refuse to set
+      # up the job. Trivy still gates the job on HIGH/CRITICAL findings
+      # via its own exit code; SARIF visualisation can be added later by
+      # an operator who enables code scanning.
 
     steps:
       - uses: actions/checkout@v4
@@ -99,24 +101,12 @@ jobs:
       # Scan the published image for vulnerabilities. Fails the job on
       # HIGH or CRITICAL findings (with a fix available — ignore-unfixed).
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.ref }}
-          format: sarif
-          output: trivy-results.sarif
           exit-code: "1"
           ignore-unfixed: true
           severity: HIGH,CRITICAL
-
-      # Upload SARIF output so findings appear in the GitHub Security tab.
-      # If code scanning isn't enabled on the repo, this step harmlessly
-      # fails and the job still passes on the Trivy result above.
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: trivy-results.sarif
 
   # ── Health check verification ───────────────────────────────────────────────
   health-check:
@@ -165,7 +155,8 @@ jobs:
       # Start the container with minimal test configuration.
       # TUNND_DOMAIN and TUNND_ADMIN_PASSWORD are required by the server to
       # start. The admin port (9091) is mapped to the host so we can reach
-      # /healthz and /api/stats.
+      # /healthz and /api/stats. TUNND_DB_PATH lands inside the writable
+      # /data volume so the unprivileged tunnd user can open it.
       - name: Start test container
         run: |
           docker run -d \
@@ -175,6 +166,7 @@ jobs:
             -e TUNND_DOMAIN=test.example.com \
             -e TUNND_ADMIN_PASSWORD=testpassword12345 \
             -e TUNND_HTTP_PORT=8080 \
+            -e TUNND_DB_PATH=/data/tunnd.db \
             ${{ steps.image.outputs.ref }}
 
       # Poll docker inspect until the container reports "healthy" or the
@@ -230,6 +222,15 @@ jobs:
             exit 1
           fi
           echo "Admin login + /api/stats verified successfully."
+
+      # Capture logs and inspect output on failure so debugging is one-click.
+      - name: Capture container diagnostics on failure
+        if: failure()
+        run: |
+          echo '--- docker inspect (state) ---'
+          docker inspect --format='{{json .State}}' tunnd-healthcheck-test 2>&1 | python3 -m json.tool || true
+          echo '--- docker logs ---'
+          docker logs tunnd-healthcheck-test 2>&1 || true
 
       # Always remove the test container to keep the runner clean,
       # even if previous steps failed.
