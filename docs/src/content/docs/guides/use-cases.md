@@ -3,44 +3,53 @@ title: Use Cases
 description: 'Concrete things developers and teams actually use Tunnd for, with the exact commands.'
 ---
 
-A grounded look at where Tunnd fits in real workflows. The patterns below
-are the ones that have come up in practice — pick the closest match and
-adapt the commands.
+Tunnd does one thing: takes a port on your laptop and gives the
+internet a stable URL pointing at it. Here are the workflows where
+that's actually useful, with the exact commands. Pick the closest
+match and adapt.
 
 ## Backend development
 
-### Stripe / GitHub / Slack webhook development
+Anything that speaks HTTP/1.1 on a port — Go (net/http, gin, echo,
+chi, fiber), Node (Express, Fastify, NestJS, Hono), Python (FastAPI,
+Django, Flask), Java (Spring Boot, Quarkus), Rust (Axum, Actix), Ruby
+(Rails), .NET, Elixir (Phoenix), PHP (Laravel) — works without
+configuration. GraphQL over HTTP is just HTTP; subscriptions over
+WebSocket are upgrade-bridged transparently. For gRPC, use the raw
+TCP tunnel so the HTTP/2 wire travels untouched.
 
-Webhooks need a public URL to POST to. Tunnd gives you a stable one
-without a paid ngrok plan or constantly-changing tunnel names.
+### Develop webhooks against a stable URL
+
+Stripe, GitHub, Slack, Twilio, Shopify — all of them deliver test
+webhooks to a public URL. Tunnd gives you one that doesn't change
+between sessions:
 
 ```bash
-# On your laptop, with your local API on port 8080:
 tunnd http 8080 --subdomain stripe-webhooks
 # → https://stripe-webhooks.tunnd.yourdomain.com
 ```
 
-Paste that URL into Stripe's webhook config (or GitHub's, or Slack's).
-Because the subdomain is pinned, you can leave the integration configured
-indefinitely. Tear the tunnel down with Ctrl+C when you're done; bring it
-back the same way next time.
+Configure that URL once in the upstream service's dashboard. Pin the
+subdomain so you can leave the integration set up forever; Ctrl+C
+when you're done, bring it back tomorrow with the same command.
 
-### Sharing your local API with a teammate
+### Share your local API with a teammate
 
-Backend dev needs to give the mobile dev a working endpoint to hit:
+Backend dev needs to hand an iOS or Android dev a real working API to
+hit, without a deploy:
 
 ```bash
 tunnd http 3000 -s alex-api
 # → https://alex-api.tunnd.yourdomain.com
 ```
 
-Mobile dev configures that as the API base URL on their device. No
-deploy, no shared staging environment to coordinate on.
+The mobile dev points their device at that base URL. No staging
+environment to coordinate on, no merge-and-deploy roundtrip.
 
-### One-off database access
+### Expose a database for a one-off debug session
 
-Need a teammate or a cloud CI job to talk to your local Postgres for a
-single debug session?
+Postgres, Redis, MongoDB, MySQL, MQTT — anything TCP. The server
+allocates a public port automatically:
 
 ```bash
 tunnd tcp 5432
@@ -52,79 +61,94 @@ tunnd tcp 5432
 psql "postgres://user:pass@tunnd.yourdomain.com:20000/dbname"
 ```
 
-Same pattern works for Redis, MongoDB, MySQL, MQTT, anything that
-speaks bytes.
+Tear it down when you're done. Don't expose production credentials
+over this — see [Security Best Practices](/guides/security-best-practices).
+
+### Tunnel a gRPC service
+
+The pragmatic path is a raw TCP tunnel. The HTTP/2 wire travels
+untouched, so unary and streaming both work:
+
+```bash
+tunnd tcp 50051
+# → tcp://tunnd.yourdomain.com:20001 → localhost:50051
+```
+
+Clients connect directly to that host:port. The trade-off is a
+non-443 endpoint; for development and demos that's normal.
 
 ---
 
 ## Frontend / UI development
 
-### "Can I see it?" — sharing the dev server
+Next.js, Vite (React, Vue, Svelte, Solid), Remix, SvelteKit, Nuxt,
+Astro, Storybook — all of them are HTTP servers on a port, and HMR
+rides over a WebSocket upgrade that Tunnd bridges transparently. Same
+command for any of them.
 
-Designer or PM asks for a quick look at your in-progress feature.
+### Share your dev server with a designer or PM
+
+Designer asks "can I see it?" mid-meeting:
 
 ```bash
-# Vite, Next.js, Astro, whatever — they all run on a port:
 tunnd http 5173 -s acme-product
 # → https://acme-product.tunnd.yourdomain.com
 ```
 
-Hot module reload keeps working because WebSocket upgrades pass through
-transparently. They see your code update as you save.
+Hot reload still works. They watch your code update as you save.
 
-### Cross-device testing
+### Test on real devices
 
-Test your responsive layout on a real iPhone, a real Android, an iPad —
-without a build, without ngrok-style timeouts, without a Vercel preview
-deploy that may or may not match your local code.
+Real iPhone, real Android, real iPad pointed at your laptop's dev
+server. No cross-compile, no Vercel preview wait, no ngrok-style
+session timeouts.
 
 ```bash
 tunnd http 3000
 # Open the printed URL on every device.
 ```
 
-### Quick demo in a meeting
+### Demo in a meeting without a deploy
 
-Mid-meeting, share the latest version of the feature with the team:
+Skip the "let me push first" step:
 
 ```bash
 tunnd http 3000 -s feature-x
-# → paste https://feature-x.tunnd.yourdomain.com into Slack/Zoom chat
+# Paste https://feature-x.tunnd.yourdomain.com into Slack/Zoom.
 ```
 
-No CI wait, no deploy step, no "let me push first".
+No CI wait, no preview deploy.
 
 ---
 
 ## Working in a team
 
-If a few engineers self-host one Tunnd server together, each person gets
-their own token from the admin dashboard and can claim a personal
-subdomain.
+If a few engineers self-host one Tunnd server, each gets their own
+token from the admin dashboard and a personal subdomain:
 
 ```bash
-# Alice runs:
+# Alice runs (her token, her subdomain):
 tunnd http 3000 -s alice
 # → https://alice.tunnd.example.com
 
-# Bob runs (his own token, his own subdomain):
+# Bob runs (his token, his subdomain):
 tunnd http 8080 -s bob
 # → https://bob.tunnd.example.com
 ```
 
-The admin can revoke any token in one click when someone leaves. Nobody
-has to share credentials, nobody overlaps subdomains, nobody pays a
+The admin can revoke any token in one click when someone leaves.
+Nobody shares credentials, nobody overlaps subdomains, nobody pays a
 per-seat tunnel bill.
 
-For multi-tunnel setups (one person running several services at once),
-see the [Multiple Tunnels](/guides/multiple-tunnels) guide.
+For one person running multiple services at once (frontend, API,
+DB), see [Multiple Tunnels](/guides/multiple-tunnels).
 
 ---
 
-## SSH into your laptop
+## SSH into your laptop from anywhere
 
-Useful for remote debugging or showing someone something on your machine
-without exposing your home network.
+For remote debugging or screen-sharing your machine to someone
+without exposing your home network:
 
 ```bash
 # Start sshd locally, then:
@@ -135,29 +159,29 @@ tunnd tcp 22
 ssh -p 20000 user@tunnd.yourdomain.com
 ```
 
-Pair with proper ssh keys + fail2ban; never expose root login over a
-password.
+Pair with proper SSH keys and `fail2ban`; never expose root login
+over a password.
 
 ---
 
-## When Tunnd is the *wrong* choice
+## When Tunnd is the wrong choice
 
-Honest fit notes — these workflows are better served by something else:
+Honest fit notes — these workflows are better served by something
+else:
 
-- **Production traffic.** Tunnd is for development, demos, webhooks, and
-  short-lived shares. Production services should run on production
-  infrastructure with proper load balancing, multi-region failover, and
-  observability that Tunnd doesn't provide.
-- **You need OAuth/SSO in front of your tunnel.** Use ngrok or
-  Cloudflare Access — Tunnd doesn't add auth in front of your tunneled
-  service yet. You can add it in your reverse proxy upstream of Tunnd
-  if you really need it.
-- **You need global anycast for low latency from anywhere.** Tunnd
-  routes through your single VPS — pick a region close to your team.
-- **You don't run any infrastructure and never want to.** Solo indie
-  hacker who'd rather pay $0–$10/mo to ngrok than run a VPS. Totally
-  reasonable. Tunnd's value is for people who already pay for a VPS or
-  want to.
+- **Production traffic.** Tunnd is for development, demos, webhooks,
+  and short-lived shares. Production services should run on
+  production infrastructure with proper load balancing, multi-region
+  failover, and observability that Tunnd doesn't provide.
+- **OAuth / SSO in front of your tunnel.** ngrok and Cloudflare
+  Access do this; Tunnd doesn't add auth in front of your tunneled
+  service yet. You can layer it in your reverse proxy if you really
+  need it.
+- **Global anycast for low latency from anywhere.** Tunnd routes
+  through your single VPS — pick a region close to your team.
+- **HTTP/3 / QUIC, UDP, or gRPC over HTTP/2 at `:443`** end-to-end.
+  See `tunnd tcp` above for gRPC; HTTP/3 and UDP are not on the v0.1
+  feature surface.
 
 ---
 
@@ -166,4 +190,4 @@ Honest fit notes — these workflows are better served by something else:
 - [Custom Subdomains](/guides/custom-subdomains) — pinning rules and tips
 - [Multiple Tunnels](/guides/multiple-tunnels) — running several at once
 - [Security Best Practices](/guides/security-best-practices) — when sharing externally
-- [Troubleshooting](/guides/troubleshooting) — common issues
+- [Troubleshooting](/guides/troubleshooting) — common errors and fixes
