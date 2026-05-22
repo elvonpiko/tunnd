@@ -36,9 +36,12 @@ USER tunnd
 VOLUME ["/data"]
 EXPOSE 80 443 9091
 
-# Health check: verify server is responding on admin port
+# Health check: verify server is responding on the admin port. Uses
+# TUNND_ADMIN_PORT when set so the probe follows operator overrides
+# (compose files commonly remap admin to 9096 to leave 9091 for
+# Prometheus etc.). Falls back to the binary default of 9091.
 HEALTHCHECK --interval=5s --timeout=3s --retries=3 --start-period=5s \
-  CMD wget -qO- http://localhost:9091/healthz || exit 1
+  CMD ["sh", "-c", "wget -qO- http://localhost:${TUNND_ADMIN_PORT:-9091}/healthz || exit 1"]
 
 ENTRYPOINT ["/usr/local/bin/tunnd-server"]
 CMD ["--config", "/data/tunnd-server.yaml"]
