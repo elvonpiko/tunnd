@@ -85,6 +85,7 @@ export default defineConfig({
         {
           label: 'Guides',
           items: [
+            { label: 'Use Cases', slug: 'guides/use-cases' },
             { label: 'Custom Subdomains', slug: 'guides/custom-subdomains' },
             { label: 'Multiple Tunnels', slug: 'guides/multiple-tunnels' },
             { label: 'Security', slug: 'guides/security-best-practices' },

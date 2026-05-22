@@ -2,10 +2,13 @@
 title: Docker Deployment
 description: 'The Tunnd server is available as a multi-arch Docker image (amd64 + arm64).'
 ---
-The Tunnd server is available as a multi-arch Docker image (amd64 + arm64).
+The Tunnd server is available as a multi-arch Docker image — `linux/amd64` and `linux/arm64` from the same tag, so it just works on a Raspberry Pi, an Oracle Cloud Ampere VM, or a regular x86 VPS.
 
 ```
-ghcr.io/elvonpiko/tunnd-server:latest
+ghcr.io/elvonpiko/tunnd-server:latest    # follows the latest release
+ghcr.io/elvonpiko/tunnd-server:0.1.0     # pinned to a specific version (recommended in production)
+ghcr.io/elvonpiko/tunnd-server:0.1       # latest 0.1.x patch
+ghcr.io/elvonpiko/tunnd-server:0         # latest 0.x.y minor
 ```
 
 ---
@@ -130,6 +133,51 @@ The image includes a health check that polls `http://localhost:9091/healthz` (an
 ```bash
 docker inspect --format='{{.State.Health.Status}}' tunnd
 ```
+
+---
+
+## TCP tunnels
+
+If your clients run `tunnd tcp <port>` to expose Postgres / Redis / SSH / etc., the server allocates a public port from `tcp_min_port..tcp_max_port` (default `20000–20100`). The provided compose files publish that range to the host:
+
+```yaml
+ports:
+  - "20000-20100:20000-20100"
+```
+
+Open the same range in your firewall on the VPS so external clients can reach the allocated ports. To narrow it (or widen it for more concurrent TCP tunnels), set:
+
+```bash
+TUNND_TCP_MIN_PORT=20000
+TUNND_TCP_MAX_PORT=20010
+```
+
+and edit the published port range in the compose file to match.
+
+---
+
+## Resource sizing
+
+The server is intentionally tiny:
+
+- **Image size:** ~15 MB (Alpine + a single static Go binary)
+- **Memory:** ~30 MB resident with a few active tunnels, scales with traffic
+- **CPU:** idles at near-zero; one core is more than enough for dozens of concurrent tunnels
+
+A 1 vCPU / 512 MB VPS is comfortable. The bottleneck on a busy server is more likely network throughput than CPU or memory.
+
+---
+
+## Upgrades
+
+Pin a specific version in production so a `pull` doesn't surprise you:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Watch the [Releases page](https://github.com/elvonpiko/tunnd/releases) or subscribe to release notifications on GitHub. The migration script runs on every start, so a downgrade across schema migrations is not supported — back up `/data/tunnd.db` before upgrading if that matters to you.
 
 ---
 

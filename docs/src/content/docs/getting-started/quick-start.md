@@ -128,7 +128,7 @@ Tunnd transparently forwards anything that runs over HTTP/1.1 or raw TCP:
 | Scenario | Command | Public URL |
 |----------|---------|------------|
 | HTTP app (Express, Vite, Django…) | `tunnd http 3000` | `https://random-name.tunnd.example.com` |
-| WebSocket app (chat, HMR, dashboards) | `tunnd http 3000` | `wss://random-name.tunnd.example.com/ws` |
+| WebSocket app (chat, HMR, dashboards) | `tunnd http 3000` | Public URL works for both `https://` and `wss://` |
 | Pinned subdomain | `tunnd http 3000 -s myapp` | `https://myapp.tunnd.example.com` |
 | Raw TCP service (Postgres, Redis, SSH…) | `tunnd tcp 5432` | `tcp://tunnd.example.com:20000` |
 
