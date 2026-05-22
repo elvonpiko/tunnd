@@ -749,10 +749,9 @@ func (tc *tunnelClient) driveStream(conn *websocket.Conn, cs *clientStream) {
 		tc.sendFrame(conn, proto.MsgClose, proto.ClosePayload{StreamID: cs.id}) //nolint:errcheck
 	}()
 
-	addr := fmt.Sprintf("127.0.0.1:%d", tc.localPort)
-	localConn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	localConn, err := dialLocal(tc.localPort, 10*time.Second)
 	if err != nil {
-		log.Error().Err(err).Str("addr", addr).Msg("cannot connect to local service")
+		log.Error().Err(err).Int("port", tc.localPort).Msg("cannot connect to local service")
 		// Drain any buffered request so writers don't block.
 		cs.req.Close() //nolint:errcheck
 		return
@@ -839,10 +838,9 @@ func (tc *tunnelClient) driveTCPStream(conn *websocket.Conn, cs *clientStream) {
 		tc.sendFrame(conn, proto.MsgClose, proto.ClosePayload{StreamID: cs.id}) //nolint:errcheck
 	}()
 
-	addr := fmt.Sprintf("127.0.0.1:%d", tc.localPort)
-	localConn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	localConn, err := dialLocal(tc.localPort, 10*time.Second)
 	if err != nil {
-		log.Error().Err(err).Str("addr", addr).Msg("cannot connect to local TCP service")
+		log.Error().Err(err).Int("port", tc.localPort).Msg("cannot connect to local TCP service")
 		cs.req.Close() //nolint:errcheck
 		return
 	}
@@ -877,6 +875,34 @@ func (tc *tunnelClient) driveTCPStream(conn *websocket.Conn, cs *clientStream) {
 		}
 	}
 	<-pumpDone
+}
+
+// dialLocal opens a TCP connection to a local service, trying IPv4
+// loopback first then IPv6. This avoids the "localhost is IPv6 on
+// Windows" footgun where Vite/etc bind to ::1 only and a literal
+// 127.0.0.1 dial gets refused. The combined wall clock is bounded by
+// the supplied timeout.
+func dialLocal(port int, timeout time.Duration) (net.Conn, error) {
+	addrs := []string{
+		fmt.Sprintf("127.0.0.1:%d", port),
+		fmt.Sprintf("[::1]:%d", port),
+	}
+	deadline := time.Now().Add(timeout)
+	var firstErr error
+	for _, addr := range addrs {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		conn, err := net.DialTimeout("tcp", addr, remaining)
+		if err == nil {
+			return conn, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	return nil, firstErr
 }
 
 // deadlineWriter wraps a net.Conn and resets its write deadline before every Write.
