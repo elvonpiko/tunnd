@@ -66,6 +66,18 @@ tunnd status
 
 ---
 
+### `tunnd update`
+
+Check for the latest released version and install it. If you're already on the latest, the command is a no-op.
+
+```bash
+tunnd update
+```
+
+The CLI also prints a single-line "v0.x.y is available" hint at most once every 24 hours when starting a tunnel. Disable that check with `TUNND_NO_UPDATE_CHECK=1` if you don't want any background network traffic to GitHub's API.
+
+---
+
 ### `tunnd version`
 
 ```bash

@@ -231,6 +231,7 @@ tunnd http <port> [flags]    tunnel an HTTP service
   --inspector-port int       local inspector UI port (default 4040)
 tunnd tcp <port>             tunnel a raw TCP port
 tunnd status                 print current configuration
+tunnd update                 install the latest released client
 tunnd version                print version
 ```
 

@@ -106,7 +106,7 @@ Then expose a local service:
   tunnd http 8080 --subdomain myapp
   tunnd tcp 5432`,
 	}
-	root.AddCommand(setupCmd(), httpCmd(), tcpCmd(), statusCmd(), versionCmd())
+	root.AddCommand(setupCmd(), httpCmd(), tcpCmd(), statusCmd(), updateCmd(), versionCmd())
 	return root
 }
 
@@ -1045,6 +1045,7 @@ func printBanner(publicURL string, localPort, inspectorPort int, protocol string
 		fmt.Printf("  Inspector     http://localhost:%d\n", inspectorPort)
 	}
 	fmt.Println()
+	maybePrintUpdateHint()
 	fmt.Println("  Ctrl+C to close tunnel")
 	fmt.Println()
 }
