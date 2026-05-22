@@ -239,15 +239,39 @@ main{padding:26px 28px;max-width:1140px;margin:0 auto}
 .section-title{font-size:11px;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:10px}
 
 /* ── Tables ── */
-.tw{background:var(--bg2);border:1px solid var(--border);border-radius:11px;overflow:hidden;margin-bottom:26px}
+.tw{background:var(--bg2);border:1px solid var(--border);border-radius:11px;overflow:hidden;margin-bottom:14px}
+.tw.scroll{max-height:540px;overflow:auto}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:10px 16px;border-bottom:1px solid var(--border);font-weight:500;white-space:nowrap}
+th{text-align:left;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:10px 16px;border-bottom:1px solid var(--border);font-weight:500;white-space:nowrap;background:var(--bg2);position:sticky;top:0;z-index:1}
 td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--muted2);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(255,255,255,.012)}
 td.p{color:var(--text);font-weight:500}
 td.mono{font-size:12px}
 .er td{text-align:center;color:var(--muted);padding:38px;font-size:12px}
+.empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:48px 24px;color:var(--muted);text-align:center}
+.empty-title{color:var(--muted2);font-size:13px;font-weight:500}
+.empty-sub{font-size:12px;line-height:1.6;max-width:380px}
+.empty code{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--accent)}
+
+/* ── Pagination ── */
+.pg{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 2px 26px;font-size:12px;color:var(--muted)}
+.pg .pg-info{flex:1;min-width:140px}
+.pg .pg-spacer{width:6px}
+.pg select{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:6px;outline:none;cursor:pointer;transition:.15s}
+.pg select:hover{border-color:var(--border2)}
+.pg select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.pg-btn{padding:5px 11px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted2);cursor:pointer;transition:.15s;font-family:var(--mono)}
+.pg-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text)}
+.pg-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Toolbars (search + actions above a table) ── */
+.tb{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.tb-search{position:relative;flex:1;max-width:320px;min-width:200px}
+.tb-search input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px 7px 32px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:.15s}
+.tb-search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.tb-search input::placeholder{color:var(--muted)}
+.tb-search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted);pointer-events:none}
 /* ── Badges ── */
 .badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap}
 .bg{background:rgba(61,255,192,.1);color:var(--accent)}
@@ -358,10 +382,22 @@ td.mono{font-size:12px}
     <tbody id="tb-active"><tr class="er"><td colspan="4">Loading…</td></tr></tbody>
   </table></div>
   <div class="section-title">History</div>
-  <div class="tw"><table>
+  <div class="tw scroll"><table>
     <thead><tr><th>Subdomain</th><th>Protocol</th><th>Opened</th><th>Closed</th><th>Status</th></tr></thead>
     <tbody id="tb-history"><tr class="er"><td colspan="5">Loading…</td></tr></tbody>
   </table></div>
+  <div class="pg" id="pg-history">
+    <div class="pg-info" id="pg-info">—</div>
+    <label style="font-size:11px;color:var(--muted)">Per page</label>
+    <select id="pg-size">
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="250">250</option>
+    </select>
+    <div class="pg-spacer"></div>
+    <button class="pg-btn" id="pg-prev" onclick="historyPage(-1)">← Prev</button>
+    <button class="pg-btn" id="pg-next" onclick="historyPage(1)">Next →</button>
+  </div>
 </div>
 
 <!-- ── Tokens view ── -->
@@ -373,7 +409,14 @@ td.mono{font-size:12px}
     </div>
     <button class="btn btn-p" onclick="openCreate()">+ New Token</button>
   </div>
-  <div class="tw"><table>
+  <div class="tb">
+    <div class="tb-search">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/></svg>
+      <input id="tk-search" type="text" placeholder="Filter by label or token…" oninput="filterTokens()" autocomplete="off">
+    </div>
+    <button class="btn btn-g btn-sm" onclick="loadTokens()">↻ Refresh</button>
+  </div>
+  <div class="tw scroll"><table>
     <thead><tr><th>Label</th><th>Token</th><th>Max Tunnels</th><th>Status</th><th></th></tr></thead>
     <tbody id="tb-tokens"><tr class="er"><td colspan="5">Loading…</td></tr></tbody>
   </table></div>
@@ -426,6 +469,22 @@ let revokeId = null;
 let menuOpen = false;
 let activeView = 'tunnels';
 
+// Pagination state for the tunnel history table.
+const histState = {
+  offset: 0,
+  size: 50,
+  total: 0,
+};
+
+// Cache of the latest tokens fetched from the server, used for the
+// client-side search filter on the Tokens view.
+let tokensCache = [];
+
+// Timers for auto-refresh. Cleared on view switch so we don't keep
+// hammering an endpoint the user isn't looking at.
+let activeRefreshTimer = null;
+let statsRefreshTimer = null;
+
 function toggleMenu() {
   menuOpen = !menuOpen;
   document.getElementById('mobile-menu').classList.toggle('open', menuOpen);
@@ -440,10 +499,8 @@ function closeMenu() {
 
 function mobileNav(name) {
   closeMenu();
-  // Update mobile menu active state
   document.getElementById('mm-tunnels').classList.toggle('active', name === 'tunnels');
   document.getElementById('mm-tokens').classList.toggle('active', name === 'tokens');
-  // Mirror to desktop nav and switch view
   const desktopBtns = document.querySelectorAll('.nav-link');
   desktopBtns.forEach((b, i) => b.classList.toggle('active', (i === 0 && name === 'tunnels') || (i === 1 && name === 'tokens')));
   switchView(name);
@@ -452,7 +509,6 @@ function mobileNav(name) {
 function showView(name, btn) {
   document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  // Mirror to mobile menu
   document.getElementById('mm-tunnels').classList.toggle('active', name === 'tunnels');
   document.getElementById('mm-tokens').classList.toggle('active', name === 'tokens');
   switchView(name);
@@ -462,15 +518,48 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
   activeView = name;
-  name === 'tunnels' ? loadTunnels() : loadTokens();
+  stopRefresh();
+  if (name === 'tunnels') {
+    loadTunnels();
+    startTunnelsRefresh();
+  } else {
+    loadTokens();
+  }
 }
 
-// Close menu when clicking outside
 document.addEventListener('click', e => {
   if (menuOpen && !document.getElementById('mobile-menu').contains(e.target) && !document.getElementById('hamburger').contains(e.target)) {
     closeMenu();
   }
 });
+
+// Stop visibility-change pump while the tab is hidden so we don't keep
+// polling in the background.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopRefresh();
+  } else if (activeView === 'tunnels') {
+    startTunnelsRefresh();
+  }
+});
+
+function startTunnelsRefresh() {
+  stopRefresh();
+  // Active tunnels + stats refresh every 5s — feels live without
+  // being noisy.
+  activeRefreshTimer = setInterval(() => {
+    refreshActiveTunnels();
+    loadStats();
+  }, 5000);
+  statsRefreshTimer = null;
+}
+
+function stopRefresh() {
+  if (activeRefreshTimer) clearInterval(activeRefreshTimer);
+  if (statsRefreshTimer) clearInterval(statsRefreshTimer);
+  activeRefreshTimer = null;
+  statsRefreshTimer = null;
+}
 
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
@@ -494,49 +583,126 @@ async function loadStats() {
   } catch(_) {}
 }
 
-async function loadTunnels() {
-  await loadStats();
+function emptyRow(cols, title, sub) {
+  const subHtml = sub ? '<div class="empty-sub">'+sub+'</div>' : '';
+  return '<tr class="er"><td colspan="'+cols+'"><div class="empty"><div class="empty-title">'+title+'</div>'+subHtml+'</div></td></tr>';
+}
+
+function renderActiveTunnels(tunnels) {
+  const tb = document.getElementById('tb-active');
+  if (!tunnels || !tunnels.length) {
+    tb.innerHTML = emptyRow(4,
+      'No active tunnels right now',
+      'Open one from a client with <code>tunnd http &lt;port&gt;</code> or <code>tunnd tcp &lt;port&gt;</code>.');
+    return;
+  }
+  tb.innerHTML = tunnels.map(t =>
+    '<tr><td class="p mono">'+esc(t.subdomain)+'</td>' +
+    '<td><span class="badge bb">'+esc(t.protocol.toUpperCase())+'</span></td>' +
+    '<td><a href="'+esc(t.public_url)+'" target="_blank" rel="noopener" style="color:var(--blue);font-size:12px">'+esc(t.public_url)+'</a></td>' +
+    '<td><span class="badge bg">● Live</span></td></tr>').join('');
+}
+
+async function refreshActiveTunnels() {
   try {
     const d = await api('/tunnels/active');
-    const tb = document.getElementById('tb-active');
-    tb.innerHTML = !d.tunnels?.length
-      ? '<tr class="er"><td colspan="4">No active tunnels right now</td></tr>'
-      : d.tunnels.map(t =>
-          '<tr><td class="p mono">'+esc(t.subdomain)+'</td>' +
-          '<td><span class="badge bb">'+esc(t.protocol.toUpperCase())+'</span></td>' +
-          '<td><a href="'+esc(t.public_url)+'" target="_blank" rel="noopener" style="color:var(--blue);font-size:12px">'+esc(t.public_url)+'</a></td>' +
-          '<td><span class="badge bg">● Live</span></td></tr>').join('');
-  } catch(_) {}
-  try {
-    const d = await api('/tunnels?limit=50');
-    const tb = document.getElementById('tb-history');
-    tb.innerHTML = !d.tunnels?.length
-      ? '<tr class="er"><td colspan="5">No tunnel history yet</td></tr>'
-      : d.tunnels.map(t => {
-          const o = new Date(t.opened_at).toLocaleString();
-          const c = t.closed_at ? new Date(t.closed_at).toLocaleString() : '—';
-          const badge = t.closed_at ? '<span class="badge bm">Closed</span>' : '<span class="badge bg">● Live</span>';
-          return '<tr><td class="p mono">'+esc(t.subdomain)+'</td>' +
-            '<td><span class="badge bb">'+esc(t.protocol.toUpperCase())+'</span></td>' +
-            '<td class="mono">'+o+'</td><td class="mono">'+c+'</td><td>'+badge+'</td></tr>';
-        }).join('');
+    renderActiveTunnels(d.tunnels);
   } catch(_) {}
 }
+
+async function loadTunnels() {
+  await loadStats();
+  await refreshActiveTunnels();
+  await loadHistory();
+}
+
+async function loadHistory() {
+  try {
+    const q = '?limit=' + histState.size + '&offset=' + histState.offset;
+    const d = await api('/tunnels' + q);
+    histState.total = d.total ?? 0;
+    const tb = document.getElementById('tb-history');
+    if (!d.tunnels || !d.tunnels.length) {
+      tb.innerHTML = emptyRow(5,
+        'No tunnel history yet',
+        'Closed tunnels will appear here. Open one from a client to get started.');
+    } else {
+      tb.innerHTML = d.tunnels.map(t => {
+        const o = new Date(t.opened_at).toLocaleString();
+        const c = t.closed_at ? new Date(t.closed_at).toLocaleString() : '—';
+        const badge = t.closed_at ? '<span class="badge bm">Closed</span>' : '<span class="badge bg">● Live</span>';
+        return '<tr><td class="p mono">'+esc(t.subdomain)+'</td>' +
+          '<td><span class="badge bb">'+esc(t.protocol.toUpperCase())+'</span></td>' +
+          '<td class="mono">'+o+'</td><td class="mono">'+c+'</td><td>'+badge+'</td></tr>';
+      }).join('');
+    }
+    updatePaginationControls();
+  } catch(_) {}
+}
+
+function updatePaginationControls() {
+  const total = histState.total;
+  const start = total === 0 ? 0 : histState.offset + 1;
+  const end = Math.min(histState.offset + histState.size, total);
+  document.getElementById('pg-info').textContent = total === 0
+    ? 'No history rows yet'
+    : 'Showing ' + start + '–' + end + ' of ' + total;
+  document.getElementById('pg-prev').disabled = histState.offset <= 0;
+  document.getElementById('pg-next').disabled = end >= total;
+}
+
+function historyPage(dir) {
+  const next = histState.offset + dir * histState.size;
+  if (next < 0 || next >= histState.total) return;
+  histState.offset = next;
+  loadHistory();
+}
+
+document.getElementById('pg-size').addEventListener('change', e => {
+  histState.size = parseInt(e.target.value, 10) || 50;
+  histState.offset = 0;
+  loadHistory();
+});
 
 async function loadTokens() {
   try {
     const d = await api('/tokens');
-    const tb = document.getElementById('tb-tokens');
-    tb.innerHTML = !d.tokens?.length
-      ? '<tr class="er"><td colspan="5">No tokens yet — create one to get started</td></tr>'
-      : d.tokens.map(t =>
-          '<tr><td class="p">'+esc(t.label)+'</td>' +
-          '<td class="mono" style="color:var(--accent)">'+esc(t.value_hint)+'</td>' +
-          '<td>'+(t.max_tunnels===0?'<span style="color:var(--muted)">Unlimited</span>':t.max_tunnels)+'</td>' +
-          '<td>'+(t.enabled?'<span class="badge bg">Active</span>':'<span class="badge br">Revoked</span>')+'</td>' +
-          '<td style="text-align:right">'+(t.enabled?'<button class="btn btn-d btn-sm" onclick="openRevoke(\''+esc(t.id)+'\')">Revoke</button>':'')+'</td></tr>'
-        ).join('');
+    tokensCache = d.tokens || [];
+    renderTokens();
   } catch(_) {}
+}
+
+function renderTokens() {
+  const q = (document.getElementById('tk-search').value || '').trim().toLowerCase();
+  const list = q
+    ? tokensCache.filter(t =>
+        (t.label || '').toLowerCase().includes(q) ||
+        (t.value_hint || '').toLowerCase().includes(q))
+    : tokensCache;
+  const tb = document.getElementById('tb-tokens');
+  if (!tokensCache.length) {
+    tb.innerHTML = emptyRow(5,
+      'No tokens yet',
+      'Click <b>+ New Token</b> above to issue your first one.');
+    return;
+  }
+  if (!list.length) {
+    tb.innerHTML = emptyRow(5,
+      'No tokens match your filter',
+      'Try a different label or token prefix.');
+    return;
+  }
+  tb.innerHTML = list.map(t =>
+    '<tr><td class="p">'+esc(t.label)+'</td>' +
+    '<td class="mono" style="color:var(--accent)">'+esc(t.value_hint)+'</td>' +
+    '<td>'+(t.max_tunnels===0?'<span style="color:var(--muted)">Unlimited</span>':t.max_tunnels)+'</td>' +
+    '<td>'+(t.enabled?'<span class="badge bg">Active</span>':'<span class="badge br">Revoked</span>')+'</td>' +
+    '<td style="text-align:right">'+(t.enabled?'<button class="btn btn-d btn-sm" onclick="openRevoke(\''+esc(t.id)+'\')">Revoke</button>':'')+'</td></tr>'
+  ).join('');
+}
+
+function filterTokens() {
+  renderTokens();
 }
 
 function openCreate() {
@@ -596,7 +762,7 @@ function esc(s) {
 }
 
 loadTunnels();
-setInterval(loadStats, 10000);
+startTunnelsRefresh();
 </script>
 </body>
 </html>`

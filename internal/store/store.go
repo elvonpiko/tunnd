@@ -229,6 +229,15 @@ func (db *DB) ListTunnels(limit, offset int) ([]*TunnelRecord, error) {
 	return db.queryTunnels(`ORDER BY opened_at DESC LIMIT ? OFFSET ?`, limit, offset)
 }
 
+// CountTunnels returns the total number of tunnel rows. Used by the
+// admin dashboard to compute pagination totals without fetching every
+// row.
+func (db *DB) CountTunnels() (int, error) {
+	var n int
+	err := db.sql.QueryRow(`SELECT COUNT(*) FROM tunnels`).Scan(&n)
+	return n, err
+}
+
 func (db *DB) queryTunnels(where string, args ...any) ([]*TunnelRecord, error) {
 	rows, err := db.sql.Query(
 		`SELECT id, token_id, subdomain, protocol, public_url, local_port, opened_at, closed_at

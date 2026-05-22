@@ -378,14 +378,20 @@ func (h *Handler) listActiveTunnels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listTunnels(w http.ResponseWriter, r *http.Request) {
-	limit := clamp(queryInt(r, "limit", 50), 1, 200)
+	limit := clamp(queryInt(r, "limit", 50), 1, 250)
 	offset := queryInt(r, "offset", 0)
 	tunnels, err := h.db.ListTunnels(limit, offset)
 	if err != nil {
 		apiErr(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	apiOK(w, map[string]any{"tunnels": tunnels, "limit": limit, "offset": offset})
+	total, _ := h.db.CountTunnels()
+	apiOK(w, map[string]any{
+		"tunnels": tunnels,
+		"limit":   limit,
+		"offset":  offset,
+		"total":   total,
+	})
 }
 
 func (h *Handler) listRequests(w http.ResponseWriter, r *http.Request) {
