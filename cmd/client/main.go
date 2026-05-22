@@ -213,27 +213,34 @@ func runSetup() error {
 }
 
 // checkServer does a lightweight HTTP GET to the admin stats endpoint
-// to verify the server is up before asking for a token.
+// to verify the server is up before asking for a token. Returns a
+// detailed error so users can tell DNS / TLS / timeout / unexpected
+// status codes apart at a glance.
 func checkServer(wsAddr string) error {
 	// Convert wss:// → https://, ws:// → http://
 	httpAddr := strings.Replace(wsAddr, "wss://", "https://", 1)
 	httpAddr = strings.Replace(httpAddr, "ws://", "http://", 1)
 	httpAddr = strings.TrimRight(httpAddr, "/") + "/api/stats"
 
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(httpAddr) //nolint:noctx
 	if err != nil {
-		return err
+		// Surface the specific transport failure (DNS, TLS, connect, timeout)
+		// instead of a generic "could not be reached".
+		return fmt.Errorf("%s: %w", httpAddr, err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 	// 200 = no auth needed (bootstrap), 401 = server up but auth required,
-	// 503 = bootstrap in progress — all mean the server is reachable.
-	if resp.StatusCode == http.StatusOK ||
-		resp.StatusCode == http.StatusUnauthorized ||
-		resp.StatusCode == http.StatusServiceUnavailable {
+	// 303 = unauthenticated UI redirect to /login, 503 = bootstrap in progress —
+	// all mean the server is reachable and responding sensibly.
+	switch resp.StatusCode {
+	case http.StatusOK,
+		http.StatusUnauthorized,
+		http.StatusSeeOther,
+		http.StatusServiceUnavailable:
 		return nil
 	}
-	return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	return fmt.Errorf("%s: server responded with HTTP %d", httpAddr, resp.StatusCode)
 }
 
 // ── http / tcp commands ───────────────────────────────────────────────────────
