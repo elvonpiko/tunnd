@@ -36,6 +36,18 @@ tunnd status
 
 ---
 
+## Dev server says "Blocked request. This host is not allowed"
+
+```
+Blocked request. This host ("myapp.tunnd.yourdomain.com") is not allowed.
+```
+
+This means your dev server (Vite, Next.js, webpack-dev-server) is checking the `Host` header and rejecting the public hostname. **You shouldn't see this on a default tunnd install** — tunnd rewrites the Host to `localhost:<port>` before forwarding, so dev servers see what they expect.
+
+If you do see it, you've likely set `--host-header=preserve` somewhere. Drop the flag (or set it to `rewrite`) and the request will go through.
+
+---
+
 ## Token rejected
 
 ```

@@ -61,6 +61,8 @@ Honesty matters. If you need any of these today, ngrok or Cloudflare Tunnel is p
 
 These are on the roadmap as community demand justifies them. PRs and feature requests welcome.
 
+Tunnd auto-detects HTTPS dev servers (`vite --https`, `next dev --experimental-https`) and rewrites the Host header so frameworks like Vite, Next.js, and webpack-dev-server accept the request without `allowedHosts` config. Run `tunnd http <port>` and any local app works.
+
 ---
 
 ## Quick start

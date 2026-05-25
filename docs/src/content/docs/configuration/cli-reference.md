@@ -20,24 +20,36 @@ Run again at any time to reconfigure.
 
 ### `tunnd http <port>`
 
-Tunnel an HTTP service on localhost. Transparently supports:
-
-- Plain HTTP/1.1 requests
-- WebSocket (`ws://` / `wss://`) upgrades
-- Server-Sent Events (`text/event-stream`)
-- Chunked transfer encoding and streaming responses
+Tunnel a local HTTP service to your public domain. Works with any framework — Vite, Next.js, webpack, Bun, Deno, Express, FastAPI, Rails, plain `python -m http.server`. Run it and it works.
 
 ```bash
 tunnd http 3000
+tunnd http 5173
 tunnd http 8080 --subdomain myapp
-tunnd http 3000 --inspector-port 4041
-tunnd http 3000 --inspector-port 0   # disable inspector
 ```
+
+Tunnd transparently handles:
+
+- Plain HTTP/1.1, WebSockets (HMR works), Server-Sent Events, chunked streaming, large uploads
+- HTTP and HTTPS dev servers (auto-detected)
+- IPv4 and IPv6 loopback (Windows-bound `::1` listeners just work)
+- Host header rewriting for frameworks that pin `allowedHosts`
+- `X-Forwarded-For` / `X-Forwarded-Proto` / `X-Forwarded-Host` for upstream apps that read them
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--subdomain`, `-s` | random | Pin a specific subdomain |
 | `--inspector-port` | 4040 | Local inspector UI port (`0` to disable) |
+
+#### Power-user flags
+
+You usually don't need these. Set them when you want to override tunnd's defaults.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host-header` | `rewrite` | `rewrite` (default) replaces the public Host with `localhost:<port>`. `preserve` forwards the public Host unchanged — useful when your upstream uses Host-based routing or signed URLs. Pass any literal hostname to set a fixed value (e.g. `app.local`). |
+| `--upstream-scheme` | auto | Force `http` or `https` instead of letting tunnd auto-detect. Auto-detect runs a quick TLS probe on first connect. |
+| `--upstream-tls-skip-verify` | `false` | Skip TLS verification on the upstream. Auto-detect already does this for self-signed dev certs; set this when forcing `--upstream-scheme=https` against a self-signed cert. |
 
 ---
 

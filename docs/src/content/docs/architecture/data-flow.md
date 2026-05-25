@@ -256,6 +256,20 @@ This prevents a slow client from blocking the server's `ServeHTTP` goroutines.
 
 ---
 
+## What Tunnd handles for you
+
+Tunnd's request path includes a few transparent niceties so the tunnel "just works" against any common dev server or production app, regardless of stack:
+
+- **HTTP/2 and HTTP/1.1.** Caddy fronts the public listener with HTTP/2 to the browser and speaks HTTP/1.1 to the upstream. Transcoding is handled at the proxy layer.
+- **WebSocket and Server-Sent Events.** WebSocket upgrades are hijacked at the server and bridged as a transparent byte-pipe — no header inspection after `101 Switching Protocols`. SSE / chunked / long-poll responses stream incrementally without buffering.
+- **Host header rewrite.** The public Host (e.g. `myapp.tunnd.example`) is replaced with `localhost:<port>` before the request reaches the upstream. Frameworks that pin allowed hosts (Vite, Next.js, webpack-dev-server) accept the request without `allowedHosts` config. Power users can opt out with `--host-header=preserve`.
+- **`X-Forwarded-*` injection.** `X-Forwarded-For` (with the original public client IP), `X-Forwarded-Proto` (preserved from Caddy if set, otherwise `https`), and `X-Forwarded-Host` (the original public Host before rewrite) are populated on every request. Apps that read these headers see the right values.
+- **IPv4 / IPv6 loopback.** Dialing the local upstream uses dual-stack resolution against `localhost:<port>`, so listeners on `127.0.0.1`, `[::1]`, or both reach the upstream on the first try.
+- **HTTP/HTTPS upstream auto-detect.** A short TLS probe at startup detects whether the upstream speaks HTTP or HTTPS. `vite dev` and `vite dev --https` both work without changing flags.
+- **Long-lived streams.** No per-iteration read deadline — slow upstreams (long-polls, slow SSE) survive as long as bytes flow within the documented 60-minute whole-stream cap.
+
+---
+
 ## Next Steps
 
 - [Architecture Overview](/architecture/overview)
