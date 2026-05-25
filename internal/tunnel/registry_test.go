@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"testing/quick"
+	"time"
 
 	"github.com/elvonpiko/tunnd/internal/store"
 	"github.com/elvonpiko/tunnd/internal/tunnel"
@@ -201,6 +202,32 @@ func TestServeHTTP_Returns404ForNonSubdomain(t *testing.T) {
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rr.Code)
+	}
+}
+
+// TestServeHTTP_Offline502 validates Property 9 — when no client is
+// connected for a subdomain, public requests bounce back as 502 Bad
+// Gateway in well under 1 s. Confirmation test for an already-correct
+// path (clause 1.11): the unknown-subdomain branch in ServeHTTP
+// short-circuits before any network or stream allocation, so the
+// response is bounded by lock acquisition + http.Error write time.
+func TestServeHTTP_Offline502(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "test.example")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "missing.test.example"
+	rec := httptest.NewRecorder()
+
+	start := time.Now()
+	r.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rec.Code)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("elapsed = %v, want ≤ 1s", elapsed)
 	}
 }
 
