@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -247,9 +248,12 @@ func checkServer(wsAddr string) error {
 
 func httpCmd() *cobra.Command {
 	var (
-		subdomain     string
-		inspectorPort int
-		inspChanged   bool
+		subdomain          string
+		inspectorPort      int
+		inspChanged        bool
+		upstreamScheme     string
+		upstreamSkipVerify bool
+		hostHeader         string
 	)
 	cmd := &cobra.Command{
 		Use:   "http <port>",
@@ -259,6 +263,14 @@ func httpCmd() *cobra.Command {
 			port, err := parsePort(args[0])
 			if err != nil {
 				return err
+			}
+			// Validate --upstream-scheme early so a bad value fails fast with a
+			// clear message instead of surfacing later as a confusing dial error.
+			// Empty string is treated as "http" (the default) and is accepted.
+			switch upstreamScheme {
+			case "", "http", "https":
+			default:
+				return fmt.Errorf("invalid --upstream-scheme %q: must be \"http\" or \"https\"", upstreamScheme)
 			}
 			cfg, err := loadConfig()
 			if err != nil {
@@ -273,11 +285,28 @@ func httpCmd() *cobra.Command {
 			if inspChanged {
 				cfg.InspectorPort = inspectorPort
 			}
-			return runTunnel(cfg, "http", subdomain, port)
+			// Auto-detect HTTPS upstream when the user didn't pin --upstream-scheme.
+			// This makes `tunnd http <port>` "just work" against vite/next dev
+			// servers regardless of whether they're plain HTTP or self-signed
+			// HTTPS. Skip-verify is auto-set unless the user opted in/out.
+			if !cmd.Flags().Changed("upstream-scheme") {
+				detected, detSkipVerify := probeUpstreamScheme(port)
+				upstreamScheme = detected
+				if detected == "https" {
+					log.Info().Int("port", port).Msg("detected HTTPS upstream")
+				}
+				if !cmd.Flags().Changed("upstream-tls-skip-verify") {
+					upstreamSkipVerify = detSkipVerify
+				}
+			}
+			return runTunnel(cfg, "http", subdomain, port, upstreamScheme, upstreamSkipVerify, hostHeader)
 		},
 	}
 	cmd.Flags().StringVarP(&subdomain, "subdomain", "s", "", "pin a subdomain (random if not set)")
 	cmd.Flags().IntVar(&inspectorPort, "inspector-port", 4040, "local inspector UI port (0 to disable)")
+	cmd.Flags().StringVar(&upstreamScheme, "upstream-scheme", "http", `upstream protocol: "http" or "https" (default "http")`)
+	cmd.Flags().BoolVar(&upstreamSkipVerify, "upstream-tls-skip-verify", false, "skip TLS verification on the upstream (use with self-signed dev certs)")
+	cmd.Flags().StringVar(&hostHeader, "host-header", "rewrite", `host header policy: "rewrite" (default — replace with localhost:<port>), "preserve" (forward public Host), or a literal hostname`)
 	// Track if inspector-port was explicitly set
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		inspChanged = cmd.Flags().Changed("inspector-port")
@@ -302,7 +331,9 @@ func tcpCmd() *cobra.Command {
 				return err
 			}
 			cfg.InspectorPort = 0 // TCP never uses inspector
-			return runTunnel(cfg, "tcp", subdomain, port)
+			// Raw TCP has no HTTP layer, so upstream-scheme / skip-verify
+			// don't apply. The flags are not registered on tcpCmd.
+			return runTunnel(cfg, "tcp", subdomain, port, "", false, "")
 		},
 	}
 }
@@ -490,6 +521,22 @@ type tunnelClient struct {
 	subdomain string
 	localPort int
 
+	// upstreamScheme controls how the client dials the local upstream.
+	// "" / "http" → plain TCP. "https" → TCP + TLS handshake (Phase 5).
+	// Validated at flag-parse time in httpCmd; not registered for tcpCmd.
+	upstreamScheme string
+
+	// upstreamSkipVerify, when true, disables TLS-cert verification on the
+	// upstream conn. Local-only — does NOT cross the wire.
+	upstreamSkipVerify bool
+
+	// hostHeader controls how the public Host header is forwarded to the
+	// upstream. "" / "rewrite" → replace with localhost:<localPort> on the
+	// server. "preserve" → forward verbatim. Any other value → literal
+	// hostname applied verbatim. Sent to the server in RegisterPayload;
+	// not registered on tcpCmd (raw TCP has no HTTP layer).
+	hostHeader string
+
 	connMu sync.Mutex
 	conn   *websocket.Conn
 
@@ -505,14 +552,17 @@ type fatalError struct{ cause error }
 func (e *fatalError) Error() string { return e.cause.Error() }
 func (e *fatalError) Unwrap() error { return e.cause }
 
-func runTunnel(cfg *clientConfig, protocol, subdomain string, localPort int) error {
+func runTunnel(cfg *clientConfig, protocol, subdomain string, localPort int, upstreamScheme string, upstreamSkipVerify bool, hostHeader string) error {
 	setupLogging(cfg.LogLevel)
 	tc := &tunnelClient{
-		cfg:       cfg,
-		protocol:  protocol,
-		subdomain: subdomain,
-		localPort: localPort,
-		streams:   make(map[string]*clientStream),
+		cfg:                cfg,
+		protocol:           protocol,
+		subdomain:          subdomain,
+		localPort:          localPort,
+		upstreamScheme:     upstreamScheme,
+		upstreamSkipVerify: upstreamSkipVerify,
+		hostHeader:         hostHeader,
+		streams:            make(map[string]*clientStream),
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -586,10 +636,12 @@ func (tc *tunnelClient) connect(ctx context.Context) error {
 
 func (tc *tunnelClient) register(conn *websocket.Conn) error {
 	msg, err := proto.EncodeJSON(proto.MsgRegister, proto.RegisterPayload{
-		Token:     tc.cfg.Token,
-		Subdomain: tc.subdomain,
-		Protocol:  tc.protocol,
-		LocalPort: tc.localPort,
+		Token:          tc.cfg.Token,
+		Subdomain:      tc.subdomain,
+		Protocol:       tc.protocol,
+		LocalPort:      tc.localPort,
+		UpstreamScheme: tc.upstreamScheme,
+		HostHeader:     tc.hostHeader,
 	})
 	if err != nil {
 		return err
@@ -751,10 +803,36 @@ func (tc *tunnelClient) driveStream(conn *websocket.Conn, cs *clientStream) {
 
 	localConn, err := dialLocal(tc.localPort, 10*time.Second)
 	if err != nil {
-		log.Error().Err(err).Int("port", tc.localPort).Msg("cannot connect to local service")
+		if isConnectionRefused(err) {
+			log.Error().Int("port", tc.localPort).Msgf(
+				"cannot connect to local service: no service listening on port %d — is your dev server running?",
+				tc.localPort,
+			)
+		} else {
+			log.Error().Err(err).Int("port", tc.localPort).Msg("cannot connect to local service")
+		}
 		// Drain any buffered request so writers don't block.
 		cs.req.Close() //nolint:errcheck
 		return
+	}
+
+	// If the upstream is HTTPS, wrap the dialed conn in a TLS client and
+	// complete the handshake before any request bytes flow. ServerName is
+	// "localhost" because we dial localhost:<port>; for self-signed dev
+	// certs the user opts in to InsecureSkipVerify via
+	// --upstream-tls-skip-verify.
+	if tc.upstreamScheme == "https" {
+		tlsConn, err := wrapUpstreamTLS(localConn, tc.upstreamSkipVerify, 10*time.Second)
+		if err != nil {
+			localConn.Close() //nolint:errcheck
+			log.Error().Err(err).Int("port", tc.localPort).Msgf(
+				"TLS handshake failed: %v; if the upstream uses a self-signed cert, pass --upstream-tls-skip-verify",
+				err,
+			)
+			cs.req.Close() //nolint:errcheck
+			return
+		}
+		localConn = tlsConn
 	}
 
 	cs.localMu.Lock()
@@ -790,8 +868,16 @@ func (tc *tunnelClient) driveStream(conn *websocket.Conn, cs *clientStream) {
 		method     = "GET"
 		urlPath    = "/"
 	)
+	// Clear any stale read deadline left by an earlier path, then set a
+	// single whole-stream cap of 60 minutes. This is the documented
+	// long-stream limit: SSE / long-poll / chunked responses survive as
+	// long as bytes flow within this window, even when the per-byte
+	// interval exceeds 120s. Liveness for shorter intervals is enforced
+	// at the wire level (WebSocket ping/pong) and at the upstream level
+	// (TCP keepalive). See design.md Property P7 and bugfix.md clause 1.9.
+	_ = localConn.SetReadDeadline(time.Time{})
+	_ = localConn.SetReadDeadline(time.Now().Add(60 * time.Minute))
 	for {
-		localConn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		n, err := localConn.Read(buf)
 		if n > 0 {
 			if statusCode == 0 && n > 12 {
@@ -840,7 +926,14 @@ func (tc *tunnelClient) driveTCPStream(conn *websocket.Conn, cs *clientStream) {
 
 	localConn, err := dialLocal(tc.localPort, 10*time.Second)
 	if err != nil {
-		log.Error().Err(err).Int("port", tc.localPort).Msg("cannot connect to local TCP service")
+		if isConnectionRefused(err) {
+			log.Error().Int("port", tc.localPort).Msgf(
+				"cannot connect to local service: no service listening on port %d — is your dev server running?",
+				tc.localPort,
+			)
+		} else {
+			log.Error().Err(err).Int("port", tc.localPort).Msg("cannot connect to local TCP service")
+		}
 		cs.req.Close() //nolint:errcheck
 		return
 	}
@@ -877,32 +970,89 @@ func (tc *tunnelClient) driveTCPStream(conn *websocket.Conn, cs *clientStream) {
 	<-pumpDone
 }
 
-// dialLocal opens a TCP connection to a local service, trying IPv4
-// loopback first then IPv6. This avoids the "localhost is IPv6 on
-// Windows" footgun where Vite/etc bind to ::1 only and a literal
-// 127.0.0.1 dial gets refused. The combined wall clock is bounded by
-// the supplied timeout.
+// dialLocal opens a TCP connection to the local service on the given
+// port. It dials "localhost:<port>" with a single Dialer call: the OS
+// resolver returns both IPv4 and IPv6 addresses, and Go's net.Dialer
+// runs Happy Eyeballs (RFC 8305) to race the families and pick the
+// winner. This works identically on Linux, macOS, and Windows, and
+// transparently handles the common "Vite binds to ::1 only on
+// Windows" case without a sequential fallback. The wall clock is
+// bounded by the supplied timeout.
 func dialLocal(port int, timeout time.Duration) (net.Conn, error) {
-	addrs := []string{
-		fmt.Sprintf("127.0.0.1:%d", port),
-		fmt.Sprintf("[::1]:%d", port),
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	d := net.Dialer{Timeout: timeout, DualStack: true}
+	return d.DialContext(ctx, "tcp", fmt.Sprintf("localhost:%d", port))
+}
+
+// isConnectionRefused reports whether err indicates the upstream actively
+// refused the connection on every loopback family. Recognizes:
+//   - POSIX ECONNREFUSED (Linux, macOS)
+//   - Windows WSAECONNREFUSED, which surfaces as a wrapped
+//     *os.SyscallError whose .Error() contains "actively refused"
+//
+// We use a substring match for the Windows form so the helper compiles
+// and lints on every platform without `//go:build` tags.
+func isConnectionRefused(err error) bool {
+	if err == nil {
+		return false
 	}
-	deadline := time.Now().Add(timeout)
-	var firstErr error
-	for _, addr := range addrs {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			break
-		}
-		conn, err := net.DialTimeout("tcp", addr, remaining)
-		if err == nil {
-			return conn, nil
-		}
-		if firstErr == nil {
-			firstErr = err
-		}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
 	}
-	return nil, firstErr
+	return strings.Contains(err.Error(), "actively refused")
+}
+
+// wrapUpstreamTLS wraps localConn in a TLS client and completes the handshake
+// under a timeout. Used by driveStream when --upstream-scheme=https.
+// ServerName is "localhost" because we dial localhost:<port>; skipVerify is
+// opt-in for self-signed dev certs via --upstream-tls-skip-verify.
+func wrapUpstreamTLS(localConn net.Conn, skipVerify bool, timeout time.Duration) (net.Conn, error) {
+	tlsConn := tls.Client(localConn, &tls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: skipVerify, //nolint:gosec // opt-in via --upstream-tls-skip-verify
+		MinVersion:         tls.VersionTLS12,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		return nil, err
+	}
+	return tlsConn, nil
+}
+
+// probeUpstreamScheme detects whether the local upstream on the given port
+// speaks HTTP or HTTPS. It dials localhost:<port> with a short timeout and
+// attempts an opportunistic TLS handshake (with cert verification skipped, so
+// self-signed dev certs work). If the handshake completes, the upstream is
+// HTTPS and we cache skipVerify=true (typical for dev). If the dial or
+// handshake fails, we default to HTTP — the actual stream dial will surface
+// any real error later.
+//
+// The probe is best-effort and bounded: ~500 ms total wall-clock budget in
+// the success path, ~1 s in the failure path. It runs once at startup, not
+// per-request.
+func probeUpstreamScheme(port int) (scheme string, skipVerify bool) {
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer dialCancel()
+	d := net.Dialer{Timeout: 300 * time.Millisecond, DualStack: true}
+	conn, err := d.DialContext(dialCtx, "tcp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		return "http", false
+	}
+	defer conn.Close() //nolint:errcheck
+
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true, //nolint:gosec // probe only — discarded immediately after handshake
+		MinVersion:         tls.VersionTLS12,
+	})
+	hsCtx, hsCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer hsCancel()
+	if err := tlsConn.HandshakeContext(hsCtx); err != nil {
+		return "http", false
+	}
+	return "https", true
 }
 
 // deadlineWriter wraps a net.Conn and resets its write deadline before every Write.
