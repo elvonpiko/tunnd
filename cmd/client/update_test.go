@@ -96,10 +96,16 @@ func TestPassiveUpdateHint_DoesNotBlock(t *testing.T) {
 		close(done)
 	}()
 
+	// Generous ceiling: the function reads a small JSON cache file and
+	// (on a stale cache) dispatches the network call to a goroutine,
+	// returning immediately. Even with a slow disk on a shared CI
+	// runner, this should be well under a second. The point of this
+	// test is to catch a regression where the network call happens
+	// synchronously, not to pin a microsecond-level number.
 	select {
 	case <-done:
 		// Returned promptly — that's the property under test.
-	case <-time.After(100 * time.Millisecond):
-		t.Fatalf("maybePrintUpdateHint did not return within 100ms — passive check is blocking")
+	case <-time.After(2 * time.Second):
+		t.Fatalf("maybePrintUpdateHint did not return within 2s — passive check is blocking")
 	}
 }
