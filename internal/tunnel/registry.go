@@ -609,6 +609,14 @@ func (r *Registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Server-side request preparation: applies to BOTH the regular request
+	// path and the upgrade path. Capture the original public Host BEFORE
+	// applyHostHeader rewrites req.Host, so X-Forwarded-Host carries the
+	// public hostname rather than the upstream-facing rewrite.
+	originalHost := req.Host
+	applyHostHeader(req, sess)
+	setForwardedHeaders(req, originalHost)
+
 	// HTTP upgrade requests (WebSocket, HTTP/2 cleartext upgrade, etc.) need raw
 	// byte forwarding, not request/response semantics. After "101 Switching
 	// Protocols" the connection is application-defined bytes — io.Copy in both
