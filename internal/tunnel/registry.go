@@ -62,6 +62,18 @@ type Session struct {
 	Protocol  string
 	PublicURL string
 
+	// LocalPort is the upstream port the client is exposing (HTTP tunnels).
+	// Stored verbatim from the register payload. Read by Phase 2's
+	// applyHostHeader helper when rewriting Host to "localhost:<LocalPort>".
+	LocalPort int
+
+	// HostHeader is the host-header policy chosen by the client at register
+	// time. Stored as a faithful echo of what the client sent: "" (which
+	// Phase 2 will treat as the new default "rewrite"), "rewrite",
+	// "preserve", or a literal hostname (e.g. "myapp.local"). No behavior
+	// change in Phase 1 — this field is read by Phase 2's helpers.
+	HostHeader string
+
 	// TCPListener is the public listener for TCP tunnels (nil for HTTP).
 	// When the session is deregistered, this listener is closed which causes
 	// the accept loop to exit and free the port.
@@ -193,6 +205,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		Subdomain:   subdomain,
 		Protocol:    protocol,
 		PublicURL:   publicURL,
+		LocalPort:   localPort,
 		TCPListener: tcpListener,
 		TCPPort:     tcpPort,
 		send:        make(chan []byte, 512),

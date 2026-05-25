@@ -46,11 +46,29 @@ type Envelope struct {
 }
 
 // RegisterPayload is sent by the client to request a tunnel.
+//
+// HostHeader and UpstreamScheme are additive, optional fields introduced for
+// the localhost-tunneling fixes (see .kiro/specs/localhost-tunneling-broken-fixes).
+// Both use `omitempty` so older clients (which omit them) and older servers
+// (which ignore unknown fields) continue to interoperate. The wire framing,
+// MsgType set, and existing field names are unchanged.
 type RegisterPayload struct {
 	Token     string `json:"token"`
 	Subdomain string `json:"subdomain,omitempty"`
 	Protocol  string `json:"protocol"` // "http" | "tcp"
 	LocalPort int    `json:"local_port"`
+
+	// HostHeader controls how the public Host header is forwarded to the
+	// upstream. Accepted values: "" (treated as "rewrite" by the server),
+	// "rewrite" (replace with localhost:<local_port>), "preserve" (forward
+	// the public Host verbatim), or a literal hostname (e.g. "myapp.local").
+	// Only applies to HTTP tunnels; ignored for raw TCP.
+	HostHeader string `json:"host_header,omitempty"`
+
+	// UpstreamScheme is the scheme the client uses to dial the local
+	// upstream. Accepted values: "" (treated as "http"), "http", or "https".
+	// Only applies to HTTP tunnels; ignored for raw TCP.
+	UpstreamScheme string `json:"upstream_scheme,omitempty"`
 }
 
 // RegisteredPayload confirms a tunnel is live.

@@ -2,7 +2,9 @@ package proto_test
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
+	"testing/quick"
 
 	"github.com/elvonpiko/tunnd/pkg/proto"
 )
@@ -210,5 +212,84 @@ func TestBinaryFrame_NoBase64Inflation(t *testing.T) {
 	wantBin := 1 + 36 + len(payload)
 	if len(binFrame) != wantBin {
 		t.Errorf("binary frame size = %d, want %d", len(binFrame), wantBin)
+	}
+}
+
+// TestRegisterPayload_BackwardCompat verifies that an old-shape RegisterPayload
+// JSON (no host_header, no upstream_scheme) decodes cleanly with empty strings
+// for the new fields. This guards P22 (Wire-protocol unchanged) — old clients
+// must remain interoperable with servers that have the new fields.
+func TestRegisterPayload_BackwardCompat(t *testing.T) {
+	// JSON shape that an older client (pre-fix) would send.
+	old := []byte(`{"token":"t","protocol":"http","local_port":3000}`)
+
+	var p proto.RegisterPayload
+	if err := json.Unmarshal(old, &p); err != nil {
+		t.Fatalf("Unmarshal old-shape RegisterPayload: %v", err)
+	}
+
+	if p.Token != "t" {
+		t.Errorf("Token = %q, want %q", p.Token, "t")
+	}
+	if p.Protocol != "http" {
+		t.Errorf("Protocol = %q, want %q", p.Protocol, "http")
+	}
+	if p.LocalPort != 3000 {
+		t.Errorf("LocalPort = %d, want 3000", p.LocalPort)
+	}
+	if p.HostHeader != "" {
+		t.Errorf("HostHeader = %q, want empty", p.HostHeader)
+	}
+	if p.UpstreamScheme != "" {
+		t.Errorf("UpstreamScheme = %q, want empty", p.UpstreamScheme)
+	}
+}
+
+// TestRegisterPayload_RoundTrip verifies that a fully-populated RegisterPayload
+// marshals to JSON and unmarshals back to a deep-equal value.
+func TestRegisterPayload_RoundTrip(t *testing.T) {
+	want := proto.RegisterPayload{
+		Token:          "tnnd_abc",
+		Subdomain:      "myapp",
+		Protocol:       "http",
+		LocalPort:      5173,
+		HostHeader:     "rewrite",
+		UpstreamScheme: "https",
+	}
+
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var got proto.RegisterPayload
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("round-trip mismatch:\n got = %+v\nwant = %+v", got, want)
+	}
+}
+
+// TestProperty_RegisterPayloadRoundTrip verifies that JSON encode+decode is
+// identity for arbitrary RegisterPayload values, using stdlib testing/quick.
+//
+// Validates: P22 (Wire-protocol Backward-Compat — round-trip identity).
+func TestProperty_RegisterPayloadRoundTrip(t *testing.T) {
+	roundTrip := func(p proto.RegisterPayload) bool {
+		raw, err := json.Marshal(p)
+		if err != nil {
+			return false
+		}
+		var got proto.RegisterPayload
+		if err := json.Unmarshal(raw, &got); err != nil {
+			return false
+		}
+		return reflect.DeepEqual(got, p)
+	}
+
+	if err := quick.Check(roundTrip, nil); err != nil {
+		t.Errorf("RegisterPayload JSON round-trip is not identity: %v", err)
 	}
 }

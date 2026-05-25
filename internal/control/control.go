@@ -118,6 +118,12 @@ func (h *Handler) handshake(conn *websocket.Conn) (*tunnel.Session, error) {
 		return nil, err
 	}
 
+	// Echo the client's host-header policy onto the session as-is. Empty
+	// string is preserved (Phase 2 treats it as the new default "rewrite"
+	// at apply-time, not at storage time). UpstreamScheme stays purely
+	// client-side — it does not need to be stored on the server session.
+	sess.HostHeader = reg.HostHeader
+
 	msg, err := proto.EncodeJSON(proto.MsgRegistered, proto.RegisteredPayload{
 		Subdomain: sess.Subdomain,
 		PublicURL: sess.PublicURL,
