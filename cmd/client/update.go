@@ -43,7 +43,7 @@ func runUpdate() error {
 	fmt.Println()
 	fmt.Println("  Checking for updates…")
 
-	latest, err := fetchLatestVersion(context.Background())
+	latest, err := fetchLatestVersion(context.Background(), Version)
 	if err != nil {
 		return fmt.Errorf("could not check latest version: %w", err)
 	}
@@ -98,10 +98,13 @@ func maybePrintUpdateHint() {
 	}
 
 	// Out of cache — refresh in background so we don't slow down banner output.
+	// Capture Version into a local before spawning so the goroutine can't race
+	// with tests that swap the global on cleanup.
+	currentVersion := Version
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
-		latest, err := fetchLatestVersion(ctx)
+		latest, err := fetchLatestVersion(ctx, currentVersion)
 		if err != nil {
 			return
 		}
@@ -130,13 +133,17 @@ type ghRelease struct {
 
 // fetchLatestVersion queries the GitHub Releases API and returns the
 // latest tag (e.g. "v0.1.1"). The supplied context bounds the call.
-func fetchLatestVersion(ctx context.Context) (string, error) {
+// userAgentVersion is captured by the caller and passed in so the
+// function never touches the package-level Version global, which keeps
+// the call safe to invoke from a background goroutine even if tests
+// swap Version on cleanup.
+func fetchLatestVersion(ctx context.Context, userAgentVersion string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleasesAPI, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "tunnd/"+Version)
+	req.Header.Set("User-Agent", "tunnd/"+userAgentVersion)
 
 	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Do(req)
