@@ -180,7 +180,7 @@ else:
 - **Global anycast for low latency from anywhere.** Tunnd routes
   through your single VPS — pick a region close to your team.
 - **HTTP/3 / QUIC, UDP, or gRPC over HTTP/2 at `:443`** end-to-end.
-  See `tunnd tcp` above for gRPC; HTTP/3 and UDP are not on the v0.1
+  See `tunnd tcp` above for gRPC; HTTP/3 and UDP are not yet on the
   feature surface.
 
 ---

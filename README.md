@@ -63,6 +63,19 @@ These are on the roadmap as community demand justifies them. PRs and feature req
 
 Tunnd auto-detects HTTPS dev servers (`vite --https`, `next dev --experimental-https`) and rewrites the Host header so frameworks like Vite, Next.js, and webpack-dev-server accept the request without `allowedHosts` config. Run `tunnd http <port>` and any local app works.
 
+### What's new in v0.2.0
+
+Dev-server tunnels now just work — Vite, Next.js, webpack, Bun, Deno, and friends all expose cleanly via `tunnd http <port>` with no flags or framework configuration. Highlights:
+
+- **Host header rewrite by default** — dev servers stop returning "Blocked request" pages.
+- **Dual-stack dial** — fixes Windows IPv6-only listeners (`::1:5173` is the default for Vite on Windows).
+- **HTTPS dev server auto-detect** — `vite --https` works without any flag.
+- **Slow streaming responses** — SSE / long-poll / chunked survive past the old 120s cutoff.
+- **`X-Forwarded-*` headers** — populated on every tunneled request.
+- **Admin dashboard polish** — paginated history, sticky table headers, token search, 5-second auto-refresh.
+
+Wire protocol unchanged; old clients/servers continue to interoperate. See [the v0.2.0 release notes](https://github.com/elvonpiko/tunnd/releases/tag/v0.2.0) for the full list.
+
 ---
 
 ## Quick start

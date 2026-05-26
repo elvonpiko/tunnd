@@ -1,8 +1,10 @@
 ---
 title: Quick Start
-description: 'Get Tunnd running in minutes. You''ll deploy the server, open the admin dashboard to create a token, then use the client to expose a local service.'
+description: 'Get Tunnd running in minutes. Deploy the server, create a token, expose any local service to the internet.'
 ---
-Get Tunnd running in minutes. You'll deploy the server, open the admin dashboard to create a token, then use the client to expose a local service.
+Get Tunnd running in minutes. Deploy the server on a VPS you own, create a token in the dashboard, expose any local service to the internet.
+
+Tunnd works out of the box with anything you'd actually tunnel — Vite, Next.js, webpack, Bun, Deno, Express, FastAPI, Rails, plain `python -m http.server`, raw TCP. No framework configuration, no `allowedHosts` edits, no flags for the common case.
 
 ## What you need
 

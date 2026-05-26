@@ -75,7 +75,8 @@ A separate HTTP server providing:
 
 - REST API for managing tokens and inspecting tunnels (`/api/*`)
 - Embedded single-page admin dashboard (`/`)
-- HTTP Basic Auth protection (username: `admin`)
+- Session-cookie authentication (12-hour TTL); first run shows a
+  bootstrap setup page where you set the admin password
 
 See [Admin API Reference](/api/admin-api) for endpoint documentation.
 
