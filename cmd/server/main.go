@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -131,10 +132,15 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("tls: %w", err)
 	}
 
-	// ── Public mux: tunnel traffic + WebSocket control plane ─────────────────
+	adminHandler := admin.New(authSvc, registry, db, cfg.AdminPassword)
+
+	// ── Public mux: tunnel traffic + WebSocket control plane + admin ─────────
+	// Requests to the bare base domain are routed to the admin dashboard so
+	// operators can reach it over HTTPS at https://<domain> without exposing
+	// the plain-HTTP admin port. Subdomain traffic goes to the tunnel registry.
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/_tunnd/control", control.New(authSvc, registry, cfg.Domain))
-	publicMux.Handle("/", registry)
+	publicMux.Handle("/", rootHandler(cfg.Domain, registry, adminHandler))
 
 	publicSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.HTTPPort),
@@ -146,9 +152,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 
 	// ── Admin server ──────────────────────────────────────────────────────────
+	// The same handler is also exposed on the dedicated admin port for
+	// reverse-proxy and local-network access.
 	adminSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:      admin.New(authSvc, registry, db, cfg.AdminPassword),
+		Handler:      adminHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 	}
@@ -414,6 +422,25 @@ func versionCmd() *cobra.Command {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// rootHandler dispatches public requests by Host. Requests addressed to the
+// bare base domain (e.g. https://tunnd.example.com) are served by the admin
+// dashboard; everything else (subdomain tunnel traffic) goes to the registry.
+// This lets operators reach the dashboard over HTTPS on the public domain
+// while the admin port stays available for reverse-proxy / LAN access.
+func rootHandler(domain string, registry *tunnel.Registry, adminHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if i := strings.IndexByte(host, ':'); i != -1 {
+			host = host[:i]
+		}
+		if host == domain {
+			adminHandler.ServeHTTP(w, r)
+			return
+		}
+		registry.ServeHTTP(w, r)
+	})
+}
 
 func openDB() (*store.DB, error) {
 	// For token CLI commands we only need the DB path — skip full server validation
