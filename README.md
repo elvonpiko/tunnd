@@ -131,10 +131,11 @@ That's it. Open the inspector at `http://localhost:4040` to see live request log
 ```bash
 tunnd http 3000                       # any HTTP service — public HTTPS URL
 tunnd http 3000 --subdomain myapp     # pin a subdomain
+tunnd ws 3000                         # WebSocket app — public wss:// URL
 tunnd tcp 5432                        # raw TCP — Postgres, Redis, SSH, anything
 ```
 
-WebSocket upgrades pass through transparently — there's no flag to set, no protocol to declare. Streaming HTTP responses (chunked transfer, Server-Sent Events) keep their flushes end to end. Raw TCP gets a public port allocated automatically from the server's configured range (default `20000–20100`).
+WebSocket and SSE upgrades pass through transparently on every HTTP tunnel — `tunnd http` already handles them, and `tunnd ws` is the same transport with a copy-paste `wss://` URL for realtime apps (REST on the same port keeps working). Streaming HTTP responses (chunked transfer, Server-Sent Events) keep their flushes end to end. Raw TCP gets a public port allocated automatically from the server's configured range (default `20000–20100`).
 
 ---
 
@@ -241,9 +242,10 @@ See the full [server config reference](https://elvonpiko.github.io/tunnd/configu
 
 ```
 tunnd setup                  configure server URL and token (interactive)
-tunnd http <port> [flags]    tunnel an HTTP service
+tunnd http <port> [flags]    tunnel an HTTP service (WebSocket / SSE included)
   --subdomain string         pin a subdomain (random if not set)
   --inspector-port int       local inspector UI port (default 4040)
+tunnd ws <port> [flags]      tunnel a WebSocket service (shows a wss:// URL)
 tunnd tcp <port>             tunnel a raw TCP port
 tunnd status                 print current configuration
 tunnd update                 install the latest released client

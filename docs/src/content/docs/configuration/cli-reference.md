@@ -36,6 +36,8 @@ Tunnd transparently handles:
 - Host header rewriting for frameworks that pin `allowedHosts`
 - `X-Forwarded-For` / `X-Forwarded-Proto` / `X-Forwarded-Host` for upstream apps that read them
 
+WebSocket upgrades are handled automatically on every HTTP tunnel — no flag, no protocol declaration. If your app is primarily realtime, [`tunnd ws`](#tunnd-ws-port) prints a `wss://` URL instead so it's ready to paste into a client.
+
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--subdomain`, `-s` | random | Pin a specific subdomain |
@@ -50,6 +52,27 @@ You usually don't need these. Set them when you want to override tunnd's default
 | `--host-header` | `rewrite` | `rewrite` (default) replaces the public Host with `localhost:<port>`. `preserve` forwards the public Host unchanged — useful when your upstream uses Host-based routing or signed URLs. Pass any literal hostname to set a fixed value (e.g. `app.local`). |
 | `--upstream-scheme` | auto | Force `http` or `https` instead of letting tunnd auto-detect. Auto-detect runs a quick TLS probe on first connect. |
 | `--upstream-tls-skip-verify` | `false` | Skip TLS verification on the upstream. Auto-detect already does this for self-signed dev certs; set this when forcing `--upstream-scheme=https` against a self-signed cert. |
+
+---
+
+### `tunnd ws <port>`
+
+Tunnel a WebSocket service. This is the **same transport as `tunnd http`** — it registers an HTTP tunnel on the wire and accepts the same flags — but it prints a `wss://` URL in the banner so the public address is copy-paste ready for a WebSocket client. HTTP requests on the same port keep working, so apps that mix REST and WebSockets are fully supported.
+
+```bash
+tunnd ws 3000
+tunnd ws 8080 --subdomain realtime
+```
+
+```
+  ▲  Tunnd
+
+  Forwarding    wss://icy-creek.tunnd.yourdomain.com → localhost:3000
+  HTTP/HTTPS    https://icy-creek.tunnd.yourdomain.com (same port)
+  Inspector     http://localhost:4040
+```
+
+Use `tunnd http` when your app is mostly REST with occasional upgrades; use `tunnd ws` when the WebSocket URL is the thing you want to share. Functionally they are interchangeable.
 
 ---
 
