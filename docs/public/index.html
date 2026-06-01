@@ -733,8 +733,8 @@ footer {
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/><path d="M5 5l7 7-7 7"/></svg>
       </div>
       <h3>WebSockets</h3>
-      <p>HMR, chat, live dashboards. Same command, same port — your <code>/ws</code> handlers upgrade transparently with no extra flags.</p>
-      <code>tunnd http 3000</code>
+      <p>HMR, chat, live dashboards. Get a public <code>wss://</code> URL ready to paste into any client — REST on the same port keeps working.</p>
+      <code>tunnd ws 3000</code>
     </div>
 
     <div class="scenario reveal">
@@ -865,6 +865,10 @@ const lines = [
   { t: 'out', text: '  ▲  Tunnd' },
   { t: 'out', text: '  <span class="term-arrow">→</span> <span class="term-url">https://brave-river.tunnd.yourdomain.com</span> → localhost:3000' },
   { t: 'out', text: '  Inspector  http://localhost:4040' },
+  { t: 'blank', text: '' },
+  { t: 'cmd', text: 'tunnd ws 3000' },
+  { t: 'out', text: '  ▲  Tunnd' },
+  { t: 'out', text: '  <span class="term-arrow">→</span> <span class="term-url">wss://icy-creek.tunnd.yourdomain.com</span> → localhost:3000' },
   { t: 'blank', text: '' },
   { t: 'cmd', text: 'tunnd tcp 5432' },
   { t: 'out', text: '  ▲  Tunnd' },

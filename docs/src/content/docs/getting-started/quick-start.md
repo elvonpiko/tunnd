@@ -111,6 +111,9 @@ Your local service is now reachable at the public URL. Open the inspector at `ht
 # Pin a subdomain
 tunnd http 3000 --subdomain myapp
 
+# Tunnel a WebSocket app (public wss:// URL)
+tunnd ws 3000
+
 # Tunnel a raw TCP port (e.g. a database)
 tunnd tcp 5432
 
@@ -130,7 +133,7 @@ Tunnd transparently forwards anything that runs over HTTP/1.1 or raw TCP:
 | Scenario | Command | Public URL |
 |----------|---------|------------|
 | HTTP app (Express, Vite, Django…) | `tunnd http 3000` | `https://random-name.tunnd.example.com` |
-| WebSocket app (chat, HMR, dashboards) | `tunnd http 3000` | Public URL works for both `https://` and `wss://` |
+| WebSocket app (chat, HMR, dashboards) | `tunnd ws 3000` | `wss://random-name.tunnd.example.com` (HTTP works on the same URL) |
 | Pinned subdomain | `tunnd http 3000 -s myapp` | `https://myapp.tunnd.example.com` |
 | Raw TCP service (Postgres, Redis, SSH…) | `tunnd tcp 5432` | `tcp://tunnd.example.com:20000` |
 
@@ -141,6 +144,13 @@ The server picks a random subdomain on each launch unless you pin one with `--su
 **Share a Vite/Next.js dev server with a teammate:**
 ```bash
 tunnd http 3000
+```
+
+**Test a WebSocket / realtime app against a public URL:**
+```bash
+tunnd ws 3000
+# Forwarding wss://icy-creek.tunnd.example.com → localhost:3000
+# Point your client at the wss:// URL; REST on the same port still works.
 ```
 
 **Receive a webhook (Stripe, GitHub, etc.) on your laptop:**
