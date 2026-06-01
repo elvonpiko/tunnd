@@ -397,7 +397,6 @@ func TestE2E_SSE_Streaming(t *testing.T) {
 	}
 }
 
-
 // newWSEchoUpstream returns a fake WebSocket upstream that:
 //   - Accepts the upgrade with gorilla's Upgrader (CheckOrigin permissive).
 //   - Echoes any text or binary message back verbatim.
@@ -598,7 +597,6 @@ func TestE2E_WebSocketHMR(t *testing.T) {
 		})
 	}
 }
-
 
 // TestStreamLifecycleNoLeak validates Property 8 — per-stream state on
 // both client and server is fully released after each request completes.
