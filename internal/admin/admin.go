@@ -262,14 +262,7 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    tok,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(sessionTTL.Seconds()),
-	})
+	h.setSessionCookie(w, r, tok)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -319,14 +312,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=Internal+error", http.StatusSeeOther)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    tok,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(sessionTTL.Seconds()),
-	})
+	h.setSessionCookie(w, r, tok)
 	log.Info().Str("source_ip", r.RemoteAddr).Msg("admin login successful")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -338,10 +324,38 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// setSessionCookie writes the admin session cookie. The Secure flag is set
+// whenever the request arrived over HTTPS (directly or via a TLS-terminating
+// reverse proxy that sets X-Forwarded-Proto), so the cookie is never sent in
+// cleartext on secured deployments while still working on the plain-HTTP
+// admin port for local / LAN access.
+func (h *Handler) setSessionCookie(w http.ResponseWriter, r *http.Request, value string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(sessionTTL.Seconds()),
+	})
+}
+
+// isSecureRequest reports whether the request reached us over HTTPS, either
+// directly (r.TLS set) or through a TLS-terminating reverse proxy that sets
+// X-Forwarded-Proto: https.
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // ── Stats ──────────────────────────────────────────────────────────────────────
