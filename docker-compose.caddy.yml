@@ -11,12 +11,16 @@
 #   - A Caddyfile.caddy file in the same directory (see below)
 #
 # Example Caddyfile.caddy:
-#   *.tunnel.yourdomain.com {
+#   # Wildcard subdomains carry tunnel traffic; the base domain serves the
+#   # admin dashboard. Both terminate TLS at Caddy and proxy to tunnd's
+#   # plain-HTTP port (8080). reverse_proxy upgrades WebSockets transparently,
+#   # so the /_tunnd/control control plane works without extra config.
+#   *.tunnel.yourdomain.com, tunnel.yourdomain.com {
 #       tls {
-#           # Use DNS challenge for wildcard cert (replace with your DNS provider)
+#           # Use DNS challenge for the wildcard cert (replace with your provider)
 #           # dns cloudflare {env.CF_API_TOKEN}
 #       }
-#       reverse_proxy tunnd-server:9091 {
+#       reverse_proxy tunnd-server:8080 {
 #           header_up X-Real-IP {remote_host}
 #           header_up X-Forwarded-For {remote_host}
 #           header_up X-Forwarded-Proto {scheme}
@@ -35,9 +39,9 @@ services:
     restart: unless-stopped
 
     # No external port exposure — tunnd-server is only accessible within the
-    # Docker network. Caddy forwards requests to it on port 9091.
+    # Docker network. Caddy forwards public traffic to it on port 8080.
     expose:
-      - "9091" # Admin port (internal only; accessible by Caddy on the shared network)
+      - "8080" # Public HTTP port (tunnel traffic + admin on the base domain)
 
     # Public TCP tunnel ports (`tunnd tcp <port>`). Published directly because
     # Caddy doesn't proxy raw TCP — clients connect to the host on these ports
@@ -52,6 +56,10 @@ services:
     environment:
       # Required: base domain for tunnel URLs (e.g. *.tunnd.yourdomain.com)
       - TUNND_DOMAIN=${TUNND_DOMAIN}
+
+      # Plain HTTP behind Caddy — Caddy terminates TLS. Any port other than 443
+      # disables tunnd's own TLS requirement.
+      - TUNND_HTTP_PORT=8080
 
       # Optional: admin password — leave unset to use the first-run bootstrap flow
       # (visit the admin URL and set a password on first login)
@@ -97,7 +105,7 @@ services:
 
     volumes:
       # Caddyfile with wildcard subdomain reverse proxy configuration.
-      # Must define routing for *.tunnel.yourdomain.com → tunnd-server:9091
+      # Must route *.tunnel.yourdomain.com and tunnel.yourdomain.com → tunnd-server:8080
       - ./Caddyfile.caddy:/etc/caddy/Caddyfile:ro
 
       # Persistent Caddy data (TLS certificates, OCSP staples, etc.)
