@@ -255,10 +255,15 @@ info "Starting server to create first auth token…"
 systemctl start tunnd
 sleep 2  # give it a moment to initialise the DB
 
-FIRST_TOKEN=$(TUNND_DB_PATH="${DATA_DIR}/tunnd.db" \
+# Create the token as the tunnd user so the DB (and its WAL/SHM sidecars)
+# stay owned by tunnd rather than root. Extract only the token value —
+# `token create` prints "tnnd_…" on two lines (the Value line and the
+# export hint), so match the token pattern and take the first hit.
+FIRST_TOKEN=$(sudo -u tunnd env TUNND_DB_PATH="${DATA_DIR}/tunnd.db" \
   "${INSTALL_DIR}/tunnd-server" \
   --config "${CONFIG_DIR}/tunnd-server.yaml" \
-  token create "first-token" 2>/dev/null | grep "tnnd_" | awk '{print $NF}')
+  token create "first-token" 2>/dev/null \
+  | grep -oE 'tnnd_[a-f0-9]+' | head -n1)
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo
