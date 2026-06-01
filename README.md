@@ -88,7 +88,7 @@ SSH into your VPS, then run:
 curl -fsSL https://raw.githubusercontent.com/elvonpiko/tunnd/main/setup.sh | sudo bash
 ```
 
-The script asks for your domain and email, installs the binary, requests a Let's Encrypt certificate, and starts a systemd service. Visit `https://yourdomain.com` to set your admin password and create your first auth token.
+The script asks for your domain and email, installs the binary, requests a Let's Encrypt certificate, and starts a systemd service. Visit `https://tunnd.yourdomain.com` to set your admin password and create your first auth token.
 
 > Prefer Docker, manual TLS, or running behind Caddy? See the [deployment guide](https://elvonpiko.github.io/tunnd/getting-started/server-deployment/).
 
@@ -264,7 +264,7 @@ tunnd-server version
 
 ## Admin API
 
-Login establishes a session cookie (12-hour TTL). The dashboard is served from the admin port (`9091` by default) — visit `http://<server-ip>:9091` or, behind a reverse proxy, your admin domain.
+Login establishes a session cookie (12-hour TTL). The dashboard is served on the base domain over HTTPS (`https://tunnd.yourdomain.com`) and on the admin port (`9091` by default) — visit `http://<server-ip>:9091` or, behind a reverse proxy, your admin domain.
 
 ```
 GET    /api/stats                       server stats
@@ -348,7 +348,8 @@ docs/
 
 - All tunnel traffic is TLS-encrypted (HTTPS / WSS)
 - Client auth uses 192-bit cryptographically random tokens (`tnnd_<48 hex>`)
-- Admin sessions use HttpOnly Secure SameSite=Strict cookies
+- Admin sessions use HttpOnly SameSite=Strict cookies, marked `Secure` over HTTPS
+- The admin dashboard is reachable over HTTPS on the base domain, or on the admin port for reverse-proxy / LAN access
 - Token values are shown only at creation; list APIs return only a hint
 - SQLite uses WAL mode with foreign-key enforcement
 - The systemd unit runs as an unprivileged `tunnd` user with `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp`, `PrivateDevices`, and only the `CAP_NET_BIND_SERVICE` capability (for binding ports 80/443)
