@@ -52,27 +52,52 @@ func configPath() string {
 }
 
 func loadConfig() (*clientConfig, error) {
+	cfg := &clientConfig{}
+
 	data, err := os.ReadFile(configPath())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf(
-				"tunnd is not set up yet.\n" +
-					"  Run: tunnd setup",
-			)
+	switch {
+	case err == nil:
+		if jerr := json.Unmarshal(data, cfg); jerr != nil {
+			return nil, fmt.Errorf("parsing config: %w", jerr)
 		}
+	case !os.IsNotExist(err):
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
-	var cfg clientConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+
+	// Environment variables override the saved config so the client works
+	// without `tunnd setup` (CI, containers, ephemeral hosts). This mirrors
+	// the export hints printed by setup.sh.
+	if v := os.Getenv("TUNND_SERVER_ADDR"); v != "" {
+		cfg.ServerAddr = v
 	}
+	if v := os.Getenv("TUNND_TOKEN"); v != "" {
+		cfg.Token = v
+	}
+	if v := os.Getenv("TUNND_INSPECTOR_PORT"); v != "" {
+		if p, perr := strconv.Atoi(v); perr == nil {
+			cfg.InspectorPort = p
+		}
+	}
+	if v := os.Getenv("TUNND_LOG_LEVEL"); v != "" {
+		cfg.LogLevel = v
+	}
+
+	// Require the essentials from either source before proceeding.
+	if cfg.ServerAddr == "" || cfg.Token == "" {
+		return nil, fmt.Errorf(
+			"tunnd is not set up yet.\n" +
+				"  Run: tunnd setup\n" +
+				"  Or set: TUNND_SERVER_ADDR=wss://… TUNND_TOKEN=tnnd_…",
+		)
+	}
+
 	if cfg.InspectorPort == 0 {
 		cfg.InspectorPort = 4040
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
 	}
-	return &cfg, nil
+	return cfg, nil
 }
 
 func saveConfig(cfg *clientConfig) error {
