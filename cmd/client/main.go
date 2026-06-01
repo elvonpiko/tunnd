@@ -132,7 +132,7 @@ Then expose a local service:
   tunnd http 8080 --subdomain myapp
   tunnd tcp 5432`,
 	}
-	root.AddCommand(setupCmd(), httpCmd(), tcpCmd(), statusCmd(), updateCmd(), versionCmd())
+	root.AddCommand(setupCmd(), httpCmd(), wsCmd(), tcpCmd(), statusCmd(), updateCmd(), versionCmd())
 	return root
 }
 
@@ -272,6 +272,35 @@ func checkServer(wsAddr string) error {
 // ── http / tcp commands ───────────────────────────────────────────────────────
 
 func httpCmd() *cobra.Command {
+	return httpLikeCmd(
+		"http <port>",
+		"Tunnel an HTTP service on localhost",
+		`Tunnel an HTTP service. WebSocket and SSE upgrades pass through
+automatically — no extra flags needed.`,
+		false,
+	)
+}
+
+// wsCmd is a convenience alias of httpCmd for WebSocket apps. It forwards
+// identically (HTTP and WS share one transport, so mixed apps keep working),
+// but prints a wss:// URL in the banner so the public address is copy-paste
+// ready for a WebSocket client. On the wire it registers as an HTTP tunnel —
+// no server-side change, fully backward compatible.
+func wsCmd() *cobra.Command {
+	return httpLikeCmd(
+		"ws <port>",
+		"Tunnel a WebSocket service on localhost",
+		`Tunnel a WebSocket service. This is the same transport as `+"`tunnd http`"+`
+with a wss:// URL shown for convenience — HTTP requests on the same port keep
+working, so apps that mix REST and WebSockets are fully supported.`,
+		true,
+	)
+}
+
+// httpLikeCmd builds the shared http/ws command. wsMode only affects how the
+// public URL is presented in the banner (wss:// vs https://); the wire
+// protocol and forwarding behavior are identical.
+func httpLikeCmd(use, short, long string, wsMode bool) *cobra.Command {
 	var (
 		subdomain          string
 		inspectorPort      int
@@ -281,8 +310,9 @@ func httpCmd() *cobra.Command {
 		hostHeader         string
 	)
 	cmd := &cobra.Command{
-		Use:   "http <port>",
-		Short: "Tunnel an HTTP service on localhost",
+		Use:   use,
+		Short: short,
+		Long:  long,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			port, err := parsePort(args[0])
@@ -324,7 +354,7 @@ func httpCmd() *cobra.Command {
 					upstreamSkipVerify = detSkipVerify
 				}
 			}
-			return runTunnel(cfg, "http", subdomain, port, upstreamScheme, upstreamSkipVerify, hostHeader)
+			return runTunnel(cfg, "http", subdomain, port, upstreamScheme, upstreamSkipVerify, hostHeader, wsMode)
 		},
 	}
 	cmd.Flags().StringVarP(&subdomain, "subdomain", "s", "", "pin a subdomain (random if not set)")
@@ -358,7 +388,7 @@ func tcpCmd() *cobra.Command {
 			cfg.InspectorPort = 0 // TCP never uses inspector
 			// Raw TCP has no HTTP layer, so upstream-scheme / skip-verify
 			// don't apply. The flags are not registered on tcpCmd.
-			return runTunnel(cfg, "tcp", subdomain, port, "", false, "")
+			return runTunnel(cfg, "tcp", subdomain, port, "", false, "", false)
 		},
 	}
 }
@@ -562,6 +592,10 @@ type tunnelClient struct {
 	// not registered on tcpCmd (raw TCP has no HTTP layer).
 	hostHeader string
 
+	// wsMode is presentation-only: when true the banner shows a wss:// URL
+	// instead of https://. The wire protocol is identical to an HTTP tunnel.
+	wsMode bool
+
 	connMu sync.Mutex
 	conn   *websocket.Conn
 
@@ -577,7 +611,7 @@ type fatalError struct{ cause error }
 func (e *fatalError) Error() string { return e.cause.Error() }
 func (e *fatalError) Unwrap() error { return e.cause }
 
-func runTunnel(cfg *clientConfig, protocol, subdomain string, localPort int, upstreamScheme string, upstreamSkipVerify bool, hostHeader string) error {
+func runTunnel(cfg *clientConfig, protocol, subdomain string, localPort int, upstreamScheme string, upstreamSkipVerify bool, hostHeader string, wsMode bool) error {
 	setupLogging(cfg.LogLevel)
 	tc := &tunnelClient{
 		cfg:                cfg,
@@ -587,6 +621,7 @@ func runTunnel(cfg *clientConfig, protocol, subdomain string, localPort int, ups
 		upstreamScheme:     upstreamScheme,
 		upstreamSkipVerify: upstreamSkipVerify,
 		hostHeader:         hostHeader,
+		wsMode:             wsMode,
 		streams:            make(map[string]*clientStream),
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -696,7 +731,7 @@ func (tc *tunnelClient) register(conn *websocket.Conn) error {
 		}
 		tc.tunnelID = reg.TunnelID
 		tc.publicURL = reg.PublicURL
-		printBanner(reg.PublicURL, tc.localPort, tc.cfg.InspectorPort, tc.protocol)
+		printBanner(reg.PublicURL, tc.localPort, tc.cfg.InspectorPort, tc.protocol, tc.wsMode)
 		return nil
 	case proto.MsgError:
 		var ep proto.ErrorPayload
@@ -1209,13 +1244,21 @@ func parsePort(s string) (int, error) {
 	return p, nil
 }
 
-func printBanner(publicURL string, localPort, inspectorPort int, protocol string) {
+func printBanner(publicURL string, localPort, inspectorPort int, protocol string, wsMode bool) {
 	fmt.Println()
 	fmt.Println("  ▲  Tunnd")
 	fmt.Println()
-	if protocol == "tcp" {
+	switch {
+	case protocol == "tcp":
 		fmt.Printf("  Forwarding    %s → localhost:%d (TCP)\n", publicURL, localPort)
-	} else {
+	case wsMode:
+		// The tunnel is plain HTTP under the hood; present the public URL as
+		// wss:// so it's copy-paste ready for a WebSocket client. https:// on
+		// the same URL keeps working for any REST endpoints on the port.
+		wsURL := strings.Replace(publicURL, "https://", "wss://", 1)
+		fmt.Printf("  Forwarding    %s → localhost:%d\n", wsURL, localPort)
+		fmt.Printf("  HTTP/HTTPS    %s (same port)\n", publicURL)
+	default:
 		fmt.Printf("  Forwarding    %s → localhost:%d\n", publicURL, localPort)
 	}
 	if protocol == "http" && inspectorPort > 0 {
