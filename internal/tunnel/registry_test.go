@@ -104,6 +104,49 @@ func TestRegister_LowercasesSubdomain(t *testing.T) {
 	}
 }
 
+// ── Tunnel limits ─────────────────────────────────────────────────────────────
+
+func TestRegister_EnforcesServerWideTunnelLimit(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+	r.SetMaxTunnelsPerToken(2)
+
+	if _, err := r.Register("tok1", "aaa", "http", 3000); err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	if _, err := r.Register("tok1", "bbb", "http", 3001); err != nil {
+		t.Fatalf("second Register: %v", err)
+	}
+	if _, err := r.Register("tok1", "ccc", "http", 3002); err == nil {
+		t.Fatal("expected third Register to be rejected by the limit, got nil")
+	}
+
+	// A different token is unaffected by tok1's usage.
+	if _, err := r.Register("tok2", "ddd", "http", 3003); err != nil {
+		t.Fatalf("other-token Register: %v", err)
+	}
+}
+
+func TestRegister_FreesLimitSlotOnDeregister(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+	r.SetMaxTunnelsPerToken(1)
+
+	sess, err := r.Register("tok1", "first", "http", 3000)
+	if err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	if _, err := r.Register("tok1", "second", "http", 3001); err == nil {
+		t.Fatal("expected second Register to hit the limit, got nil")
+	}
+
+	r.Deregister(sess.Subdomain)
+
+	if _, err := r.Register("tok1", "second", "http", 3001); err != nil {
+		t.Fatalf("Register after Deregister should succeed: %v", err)
+	}
+}
+
 // ── Deregister ────────────────────────────────────────────────────────────────
 
 func TestDeregister_RemovesSession(t *testing.T) {
