@@ -126,6 +126,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	registry := tunnel.NewWithValidator(db, cfg.Domain, reserved)
 	registry.SetTCPPortRange(cfg.TCPMinPort, cfg.TCPMaxPort)
+	registry.SetMaxTunnelsPerToken(cfg.MaxTunnelsPerToken)
 
 	tlsConfig, err := buildTLSConfig(cfg)
 	if err != nil {

@@ -680,6 +680,8 @@ func (tc *tunnelClient) register(conn *websocket.Conn) error {
 		switch ep.Code {
 		case "subdomain_in_use":
 			fmt.Fprintf(os.Stderr, "     Try a different subdomain: tunnd http %d --subdomain myapp2\n", tc.localPort)
+		case "tunnel_limit_reached":
+			fmt.Fprintf(os.Stderr, "     Close another tunnel using this token, or ask your admin to raise the limit.\n")
 		case "handshake_failed":
 			fmt.Fprintf(os.Stderr, "     Your token may be invalid or revoked.\n")
 			fmt.Fprintf(os.Stderr, "     Run: tunnd setup   to reconfigure.\n")

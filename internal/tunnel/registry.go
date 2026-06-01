@@ -104,6 +104,11 @@ type Registry struct {
 	tcpPortInUse map[int]bool
 	tcpMinPort   int
 	tcpMaxPort   int
+
+	// maxTunnelsPerToken is the server-wide cap on concurrent tunnels per
+	// auth token. 0 = unlimited. A per-token limit (Token.MaxTunnels) takes
+	// precedence when set; this value applies to tokens that don't set one.
+	maxTunnelsPerToken int
 }
 
 // New returns an initialised Registry with the default reserved subdomain list.
@@ -142,6 +147,27 @@ func (r *Registry) SetTCPPortRange(minPort, maxPort int) {
 	r.tcpMu.Unlock()
 }
 
+// SetMaxTunnelsPerToken sets the server-wide cap on concurrent tunnels per
+// auth token. 0 (the default) means unlimited. A token's own MaxTunnels,
+// when greater than zero, overrides this server-wide value.
+func (r *Registry) SetMaxTunnelsPerToken(maxTunnels int) {
+	r.mu.Lock()
+	r.maxTunnelsPerToken = maxTunnels
+	r.mu.Unlock()
+}
+
+// activeTunnelsForToken counts live sessions registered to tokenID.
+// Callers must hold r.mu.
+func (r *Registry) activeTunnelsForToken(tokenID string) int {
+	n := 0
+	for _, s := range r.sessions {
+		if s.TokenID == tokenID {
+			n++
+		}
+	}
+	return n
+}
+
 // ── Registration ──────────────────────────────────────────────────────────────
 
 // Register creates a new Session. If subdomain is empty a random one is chosen.
@@ -151,6 +177,19 @@ func (r *Registry) SetTCPPortRange(minPort, maxPort int) {
 func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) (*Session, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Enforce the concurrent-tunnel cap. A token's own MaxTunnels (when > 0)
+	// overrides the server-wide default; 0 on both means unlimited.
+	limit := r.maxTunnelsPerToken
+	if tok, err := r.db.GetTokenByID(tokenID); err == nil && tok != nil && tok.MaxTunnels > 0 {
+		limit = tok.MaxTunnels
+	}
+	if limit > 0 && r.activeTunnelsForToken(tokenID) >= limit {
+		return nil, &ValidationError{
+			Code:    "tunnel_limit_reached",
+			Message: fmt.Sprintf("token has reached its limit of %d concurrent tunnel(s)", limit),
+		}
+	}
 
 	if subdomain == "" {
 		// Generate a random subdomain and ensure it is not already taken.
