@@ -9,6 +9,29 @@ extra context (breaking changes, migration notes, wire-protocol compatibility).
 
 ## [Unreleased]
 
+## [0.2.1] - Pending
+
+Onboarding and reliability fixes that make the one-command VPS setup work exactly as documented, plus a convenience command for WebSocket apps.
+
+### Fixed
+
+- **One-command setup prints a usable token.** `setup.sh` now extracts only the token value (it previously captured two lines) and creates the token as the `tunnd` user, so the database and its WAL/SHM files aren't left owned by root.
+- **Admin dashboard reachable over HTTPS.** The dashboard is now served on the base domain (`https://tunnd.yourdomain.com`) in the standalone deploy, matching the docs — not only on the plain-HTTP admin port. The admin port still works for reverse-proxy / LAN access.
+- **Session cookie is marked `Secure`** on HTTPS requests (direct TLS or `X-Forwarded-Proto: https`), so it is never sent in cleartext on secured deployments.
+- **Caddy compose works as written.** `docker-compose.caddy.yml` now runs tunnd in plain-HTTP mode behind Caddy (it previously failed validation by defaulting to port 443 with no TLS).
+
+### Added
+
+- **`max_tunnels_per_token` is now enforced.** A per-token `max_tunnels` overrides the server-wide default; `0` means unlimited. Clients get a clear `tunnel_limit_reached` message.
+- **Client honors `TUNND_SERVER_ADDR` / `TUNND_TOKEN`** (plus inspector port and log level) environment variables, so the client runs without `tunnd setup` — useful for CI, containers, and the export hints printed by `setup.sh`.
+- **`tunnd ws <port>` command.** A convenience alias of `tunnd http` for WebSocket apps: same transport and flags, but it prints a copy-paste-ready `wss://` URL. HTTP on the same port keeps working, so mixed REST + WebSocket apps are fully supported. No wire-protocol change.
+
+### Wire compatibility
+
+No protocol changes. `tunnd ws` registers as an HTTP tunnel on the wire, so all client/server version combinations continue to interoperate.
+
+## [0.2.0] - Released
+
 ### Tunnels just work for any local dev server
 
 `tunnd http <port>` now reliably exposes any local dev server — Vite, Next.js, webpack, Bun, Deno, Express, FastAPI, Rails, you name it — out of the box. No framework configuration, no `allowedHosts` edits, no flags required.
