@@ -32,12 +32,22 @@ import (
 
 	"github.com/elvonpiko/tunnd/internal/auth"
 	"github.com/elvonpiko/tunnd/internal/control"
+	"github.com/elvonpiko/tunnd/internal/publicsrv"
 	"github.com/elvonpiko/tunnd/internal/store"
 	"github.com/elvonpiko/tunnd/internal/tunnel"
 	"github.com/elvonpiko/tunnd/pkg/proto"
 )
 
 // harness holds the shared in-process server pieces for one integration test.
+//
+// Two flavors exist:
+//   - newHarness: the classic mode — two httptest servers (control + public),
+//     no server-level timeouts. Fast, good for most tests.
+//   - newProductionHarness: one real http.Server built by internal/publicsrv
+//     with the exact production timeout posture, serving BOTH the control
+//     plane and public traffic. Use this whenever the property under test
+//     depends on how the production listener is configured (e.g. streaming
+//     responses outliving the old 90s WriteTimeout).
 type harness struct {
 	db         *store.DB
 	registry   *tunnel.Registry
@@ -46,6 +56,11 @@ type harness struct {
 	controlSrv *httptest.Server // mounts the control handler — WS dial target
 	domain     string
 	tokenValue string
+
+	// publicBaseURL is where public HTTP requests go; controlWSURL is where
+	// the client's WebSocket dials. Derived from either flavor of listener.
+	publicBaseURL string
+	controlWSURL  string
 }
 
 // newHarness builds a fresh in-process tunnd-server (registry + control plane +
@@ -85,6 +100,67 @@ func newHarness(t *testing.T, domain string) *harness {
 		controlSrv: controlSrv,
 		domain:     domain,
 		tokenValue: tok.Value,
+
+		publicBaseURL: publicSrv.URL,
+		controlWSURL:  strings.Replace(controlSrv.URL, "http://", "ws://", 1) + publicsrv.ControlPath,
+	}
+	t.Cleanup(h.Close)
+	return h
+}
+
+// newProductionHarness builds the public listener exactly like tunnd-server
+// does: a single http.Server (via internal/publicsrv, production timeout
+// posture) serving the control plane AND the tunnel registry on one port.
+// The admin handler is a stub — base-domain routing is covered elsewhere;
+// what matters here is the production listener configuration.
+func newProductionHarness(t *testing.T, domain string) *harness {
+	t.Helper()
+
+	f, err := os.CreateTemp(t.TempDir(), "tunnd-itest-*.db")
+	if err != nil {
+		t.Fatalf("create temp db file: %v", err)
+	}
+	f.Close()
+
+	db, err := store.Open(f.Name())
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	authSvc := auth.New(db)
+	tok, err := authSvc.CreateToken("integration-test", 0)
+	if err != nil {
+		db.Close()
+		t.Fatalf("create token: %v", err)
+	}
+
+	registry := tunnel.New(db, domain)
+
+	mux := publicsrv.NewMux(domain,
+		control.New(authSvc, registry, domain),
+		registry,
+		http.NotFoundHandler(), // stub admin — not under test here
+	)
+	srv := publicsrv.NewServer("", mux, nil)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		db.Close()
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	base := "http://" + ln.Addr().String()
+	h := &harness{
+		db:         db,
+		registry:   registry,
+		authSvc:    authSvc,
+		domain:     domain,
+		tokenValue: tok.Value,
+
+		publicBaseURL: base,
+		controlWSURL:  "ws://" + ln.Addr().String() + publicsrv.ControlPath,
 	}
 	t.Cleanup(h.Close)
 	return h
@@ -128,11 +204,9 @@ func (h *harness) Close() {
 	}
 }
 
-// wsURL converts the control httptest URL ("http://addr") into the
-// ws:// URL the client dials.
+// wsURL is the WebSocket URL the client dials.
 func (h *harness) wsURL() string {
-	u := strings.Replace(h.controlSrv.URL, "http://", "ws://", 1)
-	return u + "/_tunnd/control"
+	return h.controlWSURL
 }
 
 // clientOpts are the knobs a test passes when starting an in-process client.
@@ -238,12 +312,12 @@ func (h *harness) startClient(t *testing.T, opts clientOpts) (*testClient, strin
 	}
 
 	tc := &testClient{
-		conn:        conn,
-		localPort:   opts.localPort,
-		streams:     make(map[string]*testStream),
-		closed:      make(chan struct{}),
-		closeErrCh:  make(chan error, 1),
-		t:            t,
+		conn:       conn,
+		localPort:  opts.localPort,
+		streams:    make(map[string]*testStream),
+		closed:     make(chan struct{}),
+		closeErrCh: make(chan error, 1),
+		t:          t,
 	}
 
 	// Long-running tests (e.g. slow-stream emitting one byte after 130s)
@@ -556,7 +630,7 @@ func (h *harness) doPublicRequest(t *testing.T, host string) (int, string) {
 // larger timeout than the 10s default.
 func (h *harness) doPublicRequestWithTimeout(t *testing.T, host string, timeout time.Duration) (int, string) {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, h.publicSrv.URL+"/", nil)
+	req, err := http.NewRequest(http.MethodGet, h.publicBaseURL+"/", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

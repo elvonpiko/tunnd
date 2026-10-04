@@ -366,6 +366,81 @@ func newSSEUpstream(t *testing.T, count int) (*httptest.Server, int) {
 	return srv, portFromURL(t, srv.URL)
 }
 
+// TestE2E_ProductionListener_LongSSE_SurvivesOldWriteTimeout proves the
+// production timeout posture doesn't sever long-lived streaming responses.
+//
+// The public listener here is built by internal/publicsrv — the exact
+// configuration tunnd-server runs (ReadHeaderTimeout set, ReadTimeout and
+// WriteTimeout unset). The upstream emits 100 SSE events at 1/s (~100s
+// total). The pre-fix production server set WriteTimeout=90s, which killed
+// this response around event 88 — and because the suite previously
+// validated streaming only against a timeout-less httptest server, CI was
+// blind to it. This test exists so that kind of drift can't happen again:
+// the property "long streams survive" is asserted against the real listener.
+func TestE2E_ProductionListener_LongSSE_SurvivesOldWriteTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("long production-listener streaming test (~100s)")
+	}
+
+	const eventCount = 100
+	const oldWriteTimeout = 90 * time.Second
+	_, upstreamPort := newSSEUpstream(t, eventCount)
+
+	h := newProductionHarness(t, "tunnd.example")
+	_, sub := h.startClient(t, clientOpts{
+		subdomain:  "prod-stream",
+		hostHeader: "",
+		localPort:  upstreamPort,
+	})
+	waitForRegistry()
+	publicHost := sub + ".tunnd.example"
+
+	req, err := http.NewRequest(http.MethodGet, h.publicBaseURL+"/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Host = publicHost
+
+	client := &http.Client{
+		Timeout:   130 * time.Second,
+		Transport: &http.Transport{DisableKeepAlives: true},
+	}
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("public request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	// Count events as they stream in; the scanner blocks ~1s between
+	// events, which doubles as the incremental-delivery proof.
+	events := 0
+	sc := bufio.NewScanner(resp.Body)
+	for sc.Scan() {
+		if strings.HasPrefix(sc.Text(), "data:") {
+			events++
+			if events > eventCount {
+				t.Fatalf("received more than %d events", eventCount)
+			}
+		}
+	}
+	elapsed := time.Since(start)
+	if err := sc.Err(); err != nil {
+		t.Fatalf("stream read failed after %d events (elapsed %s): %v", events, elapsed, err)
+	}
+	if events != eventCount {
+		t.Fatalf("received %d events, want %d (elapsed %s) — stream was truncated",
+			events, eventCount, elapsed)
+	}
+	// The whole point: the stream must outlive the old 90s WriteTimeout.
+	if elapsed <= oldWriteTimeout {
+		t.Fatalf("stream ended at %s — it did not outlive the old 90s WriteTimeout", elapsed)
+	}
+}
+
 // TestE2E_SSE_Streaming validates Property 6 — streaming bodies are
 // delivered to the public client incrementally (not buffered until the
 // upstream closes).
