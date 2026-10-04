@@ -602,6 +602,11 @@ type tunnelClient struct {
 	tunnelID  string
 	publicURL string
 
+	// registered flips true once the server accepted a registration on this
+	// client. It gates the reconnect loop's retry-budget reset: only a
+	// cycle that got past the handshake counts as a fresh start.
+	registered bool
+
 	streamsMu sync.RWMutex
 	streams   map[string]*clientStream
 }
@@ -635,11 +640,17 @@ func (tc *tunnelClient) connectWithRetry(ctx context.Context) error {
 	const maxBackoff = 30 * time.Second
 	backoff := time.Second
 	attempt := 0
+	registerRetries := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
+		}
+		// A previous successful registration means the last connect cycle
+		// got past the handshake — reset the retry budget for this one.
+		if tc.registered {
+			registerRetries = 0
 		}
 		if attempt > 0 {
 			log.Info().Dur("retry_in", backoff).Int("attempt", attempt+1).Msg("reconnecting…")
@@ -660,6 +671,20 @@ func (tc *tunnelClient) connectWithRetry(ctx context.Context) error {
 			var fe *fatalError
 			if errors.As(err, &fe) {
 				return fe.cause
+			}
+			var re *retryableError
+			if errors.As(err, &re) {
+				registerRetries++
+				if registerRetries >= maxRegisterRetries {
+					// Give up — print the full rejection + hint so the
+					// operator knows what to change.
+					printRegisterRejection(re.code, re.cause.Error(), tc.localPort)
+					return re.cause
+				}
+				log.Warn().Err(re.cause).
+					Int("attempt", registerRetries).Int("max", maxRegisterRetries).
+					Msg("registration rejected — will retry")
+				continue
 			}
 			log.Error().Err(err).Msg("tunnel disconnected")
 			continue
@@ -731,23 +756,22 @@ func (tc *tunnelClient) register(conn *websocket.Conn) error {
 		}
 		tc.tunnelID = reg.TunnelID
 		tc.publicURL = reg.PublicURL
+		// Pin the assigned subdomain so reconnects request the same name.
+		// Combined with server-side takeover this keeps the public URL
+		// stable across reconnects — including randomly-assigned ones.
+		tc.subdomain = reg.Subdomain
+		tc.registered = true
 		printBanner(reg.PublicURL, tc.localPort, tc.cfg.InspectorPort, tc.protocol, tc.wsMode)
 		return nil
 	case proto.MsgError:
 		var ep proto.ErrorPayload
 		proto.DecodePayload(env, &ep) //nolint:errcheck
-		fmt.Fprintf(os.Stderr, "\n  ✗  %s\n", ep.Message)
-		switch ep.Code {
-		case "subdomain_in_use":
-			fmt.Fprintf(os.Stderr, "     Try a different subdomain: tunnd http %d --subdomain myapp2\n", tc.localPort)
-		case "tunnel_limit_reached":
-			fmt.Fprintf(os.Stderr, "     Close another tunnel using this token, or ask your admin to raise the limit.\n")
-		case "handshake_failed":
-			fmt.Fprintf(os.Stderr, "     Your token may be invalid or revoked.\n")
-			fmt.Fprintf(os.Stderr, "     Run: tunnd setup   to reconfigure.\n")
+		rejErr := fmt.Errorf("registration rejected [%s]: %s", ep.Code, ep.Message)
+		if registerRejectionIsRetryable(ep.Code) {
+			return &retryableError{code: ep.Code, cause: rejErr}
 		}
-		fmt.Fprintln(os.Stderr)
-		return &fatalError{cause: fmt.Errorf("registration rejected [%s]: %s", ep.Code, ep.Message)}
+		printRegisterRejection(ep.Code, ep.Message, tc.localPort)
+		return &fatalError{cause: rejErr}
 	default:
 		return fmt.Errorf("unexpected frame during handshake: %s", env.Type)
 	}
@@ -766,6 +790,15 @@ func (tc *tunnelClient) readLoop(ctx context.Context, conn *websocket.Conn) erro
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
+			}
+			// A deliberate server-side close (close code 4429) means the
+			// tunnel was taken over by a newer client or the token was
+			// revoked. Never auto-reconnect in that case — it would fight
+			// the new owner of the subdomain.
+			if fatal, reason := classifyClosedByServer(err); fatal {
+				return &fatalError{cause: fmt.Errorf(
+					"server closed this tunnel session: %s — not reconnecting", reason,
+				)}
 			}
 			return fmt.Errorf("ws read: %w", err)
 		}
