@@ -45,6 +45,18 @@ type Envelope struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// WebSocket close codes used by the control plane. These live in the
+// application-defined range (4000–4999) reserved by RFC 6455.
+const (
+	// CloseCodeSessionTakenOver tells a client its session was replaced by
+	// a newer registration of the same subdomain (the normal reconnect /
+	// takeover path) or killed by the operator (token revocation). A client
+	// that receives this close code must NOT automatically reconnect — a
+	// reconnect loop between two processes fighting over one subdomain is
+	// exactly what this code exists to prevent.
+	CloseCodeSessionTakenOver = 4429
+)
+
 // RegisterPayload is sent by the client to request a tunnel.
 //
 // HostHeader and UpstreamScheme are additive, optional fields introduced for

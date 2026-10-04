@@ -63,7 +63,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer func() {
-		h.registry.Deregister(sess.Subdomain)
+		// Deregister by session identity: if this session was replaced by a
+		// newer registration of the same subdomain (takeover), the registry
+		// already holds the new one and this is a no-op on the map.
+		h.registry.DeregisterSession(sess)
 		conn.Close()
 		log.Info().Str("subdomain", sess.Subdomain).Msg("client disconnected")
 	}()
@@ -203,6 +206,10 @@ func (h *Handler) reader(conn *websocket.Conn, sess *tunnel.Session) {
 // When the writer exits (write error or connection close), it closes the
 // underlying connection so the reader goroutine also exits and the session
 // is properly deregistered.
+//
+// The session can also be kicked server-side (replaced by a newer registration
+// of the same subdomain, or revoked). The writer then sends a close frame with
+// CloseCodeSessionTakenOver so the client knows NOT to auto-reconnect.
 func (h *Handler) writer(conn *websocket.Conn, sess *tunnel.Session) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -223,6 +230,19 @@ func (h *Handler) writer(conn *websocket.Conn, sess *tunnel.Session) {
 				log.Debug().Err(err).Str("session", sess.ID).Msg("ws write error — closing connection")
 				return
 			}
+
+		case <-sess.Kicked():
+			// Tell the client why the session died, then close. Best-effort —
+			// if the write fails the TCP close still reaches the client.
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage( //nolint:errcheck
+				proto.CloseCodeSessionTakenOver, sess.KickReason(),
+			))
+			log.Info().
+				Str("subdomain", sess.Subdomain).
+				Str("reason", sess.KickReason()).
+				Msg("session kicked — closing control WebSocket")
+			return
 
 		case <-ticker.C:
 			conn.SetWriteDeadline(time.Now().Add(writeWait))

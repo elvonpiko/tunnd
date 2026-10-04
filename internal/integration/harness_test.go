@@ -165,6 +165,11 @@ type testClient struct {
 	closeOnce sync.Once
 	closed    chan struct{}
 
+	// closeErrCh receives the terminal read error (nil never sent) when the
+	// server closes the control WebSocket. Tests use it to assert close
+	// codes (e.g. takeover kicks).
+	closeErrCh chan error
+
 	t *testing.T
 }
 
@@ -233,11 +238,12 @@ func (h *harness) startClient(t *testing.T, opts clientOpts) (*testClient, strin
 	}
 
 	tc := &testClient{
-		conn:      conn,
-		localPort: opts.localPort,
-		streams:   make(map[string]*testStream),
-		closed:    make(chan struct{}),
-		t:         t,
+		conn:        conn,
+		localPort:   opts.localPort,
+		streams:     make(map[string]*testStream),
+		closed:      make(chan struct{}),
+		closeErrCh:  make(chan error, 1),
+		t:            t,
 	}
 
 	// Long-running tests (e.g. slow-stream emitting one byte after 130s)
@@ -290,10 +296,15 @@ func (tc *testClient) Close() {
 
 // readLoop processes incoming control-plane frames until the conn closes.
 // It mirrors the dispatch logic in cmd/client/main.go's readLoop, minimally.
+// The terminal read error is published to closeErrCh for close-code tests.
 func (tc *testClient) readLoop() {
 	for {
 		_, raw, err := tc.conn.ReadMessage()
 		if err != nil {
+			select {
+			case tc.closeErrCh <- err:
+			default:
+			}
 			return
 		}
 

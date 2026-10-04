@@ -83,8 +83,51 @@ type Session struct {
 	// send queues outgoing frames for the WebSocket writer goroutine.
 	send chan []byte
 
+	// kicked is closed exactly once when this session must die: it was
+	// replaced by a newer registration of the same subdomain (reconnect
+	// takeover), or its token was revoked. The control-plane writer
+	// observes it, sends a close frame carrying CloseCodeSessionTakenOver,
+	// and closes the WebSocket so the reader exits.
+	//
+	// kickReason is written before the channel closes and read only after
+	// the channel is observed closed, so the channel close is the
+	// happens-before edge — no extra lock needed.
+	kicked     chan struct{}
+	kickOnce   sync.Once
+	kickReason string
+
+	// closeOnce guards closeSession so it can run exactly once no matter
+	// which path triggers it (disconnect, takeover, revocation).
+	closeOnce sync.Once
+
 	mu      sync.Mutex
 	streams map[string]*Stream
+}
+
+// Kick marks the session as replaced/killed. Idempotent. The reason is
+// delivered to the client in the WebSocket close frame.
+func (s *Session) Kick(reason string) {
+	s.kickOnce.Do(func() {
+		s.kickReason = reason
+		close(s.kicked)
+	})
+}
+
+// Kicked exposes the kick signal to the control-plane writer goroutine.
+func (s *Session) Kicked() <-chan struct{} { return s.kicked }
+
+// KickReason returns the reason passed to Kick. Only meaningful after
+// Kicked() has been observed closed.
+func (s *Session) KickReason() string { return s.kickReason }
+
+// IsKicked reports whether the session has been kicked.
+func (s *Session) IsKicked() bool {
+	select {
+	case <-s.kicked:
+		return true
+	default:
+		return false
+	}
 }
 
 // defaultReservedSubdomains is the set of subdomains that cannot be registered
@@ -174,9 +217,15 @@ func (r *Registry) activeTunnelsForToken(tokenID string) int {
 // For TCP tunnels, allocates a public port from the configured range and binds
 // a listener; the listener is closed automatically when the session is
 // deregistered.
+//
+// Reconnect / takeover semantics: if the requested subdomain is currently held
+// by a session belonging to the SAME token, the stale session is replaced —
+// its WebSocket is closed (close code 4429) and the new registration proceeds.
+// This makes client reconnects after a network blip work without the old
+// session blocking the subdomain. A subdomain held by a DIFFERENT token is
+// still rejected with subdomain_in_use.
 func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) (*Session, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	// Enforce the concurrent-tunnel cap. A token's own MaxTunnels (when > 0)
 	// overrides the server-wide default; 0 on both means unlimited.
@@ -185,6 +234,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		limit = tok.MaxTunnels
 	}
 	if limit > 0 && r.activeTunnelsForToken(tokenID) >= limit {
+		r.mu.Unlock()
 		return nil, &ValidationError{
 			Code:    "tunnel_limit_reached",
 			Message: fmt.Sprintf("token has reached its limit of %d concurrent tunnel(s)", limit),
@@ -204,17 +254,26 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		// Validate and sanitize the requested custom subdomain.
 		sanitized, err := r.validator.ValidateAndSanitize(subdomain)
 		if err != nil {
+			r.mu.Unlock()
 			return nil, err
 		}
 		subdomain = sanitized
 	}
 
-	// Check for conflicts with existing sessions.
-	if _, exists := r.sessions[subdomain]; exists {
-		return nil, &ValidationError{
-			Code:    "subdomain_in_use",
-			Message: fmt.Sprintf("subdomain '%s' is already in use", subdomain),
+	// Conflict vs takeover: same token re-registering a subdomain is the
+	// normal reconnect path — replace the stale session. A different token
+	// holding the name is a real conflict.
+	var stale *Session
+	if existing, exists := r.sessions[subdomain]; exists {
+		if existing.TokenID != tokenID {
+			r.mu.Unlock()
+			return nil, &ValidationError{
+				Code:    "subdomain_in_use",
+				Message: fmt.Sprintf("subdomain '%s' is already in use", subdomain),
+			}
 		}
+		delete(r.sessions, subdomain)
+		stale = existing
 	}
 
 	tunnelID := uuid.New().String()
@@ -228,6 +287,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 	if protocol == "tcp" {
 		port, ln, err := r.allocateTCPPort()
 		if err != nil {
+			r.mu.Unlock()
 			return nil, &ValidationError{Code: "tcp_port_unavailable", Message: err.Error()}
 		}
 		tcpListener = ln
@@ -248,6 +308,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		TCPListener: tcpListener,
 		TCPPort:     tcpPort,
 		send:        make(chan []byte, 512),
+		kicked:      make(chan struct{}),
 		streams:     make(map[string]*Stream),
 	}
 
@@ -260,6 +321,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		LocalPort: localPort,
 		OpenedAt:  time.Now(),
 	}); err != nil {
+		r.mu.Unlock()
 		if tcpListener != nil {
 			tcpListener.Close() //nolint:errcheck
 			r.releaseTCPPort(tcpPort)
@@ -268,6 +330,15 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 	}
 
 	r.sessions[subdomain] = sess
+	r.mu.Unlock()
+
+	// The registry is consistent now — tear the stale session down outside
+	// the registry lock. Its deferred DeregisterSession is a no-op on the
+	// map (pointer mismatch) and closeSession is idempotent.
+	if stale != nil {
+		r.closeSession(stale)
+		stale.Kick(fmt.Sprintf("subdomain %q re-registered by a newer session of the same token", subdomain))
+	}
 
 	// Spawn the TCP accept loop now that the session is fully wired up.
 	if tcpListener != nil {
@@ -390,7 +461,58 @@ func (r *Registry) proxyTCPConn(sess *Session, inbound net.Conn) {
 	}
 }
 
-// Deregister removes a session from the registry and marks the tunnel closed.
+// closeSession performs the teardown of one session: closes its public TCP
+// listener (if any), unblocks in-flight streams so their ServeHTTP goroutines
+// exit, and marks the tunnel closed in the database. Idempotent — safe to call
+// from any path (disconnect, takeover, revocation) and safe to interleave
+// with a session's deferred DeregisterSession.
+func (r *Registry) closeSession(sess *Session) {
+	sess.closeOnce.Do(func() {
+		// Close TCP listener (if any) so the accept loop exits and the port frees.
+		if sess.TCPListener != nil {
+			sess.TCPListener.Close() //nolint:errcheck
+			r.releaseTCPPort(sess.TCPPort)
+		}
+
+		// Tear down any in-flight streams so ServeHTTP goroutines unblock.
+		sess.mu.Lock()
+		for _, st := range sess.streams {
+			st.reqW.CloseWithError(io.ErrClosedPipe)
+			st.respW.CloseWithError(io.ErrClosedPipe)
+		}
+		sess.mu.Unlock()
+
+		if err := r.db.CloseTunnel(sess.TunnelID); err != nil {
+			log.Error().Err(err).Str("tunnel_id", sess.TunnelID).Msg("closing tunnel in DB")
+		}
+	})
+}
+
+// DeregisterSession removes exactly this session from the registry — if and
+// only if it is still the registered one — and tears it down. Pointer identity
+// is checked under the registry lock so a stale disconnect (e.g. the reader
+// goroutine of a replaced session exiting late) can never remove a newer
+// session that legitimately re-registered the same subdomain.
+func (r *Registry) DeregisterSession(sess *Session) {
+	if sess == nil {
+		return
+	}
+	r.mu.Lock()
+	if cur, ok := r.sessions[sess.Subdomain]; ok && cur == sess {
+		delete(r.sessions, sess.Subdomain)
+	}
+	r.mu.Unlock()
+
+	r.closeSession(sess)
+	log.Info().Str("subdomain", sess.Subdomain).Msg("tunnel deregistered")
+}
+
+// Deregister removes the session currently registered under subdomain (if
+// any) and tears it down.
+//
+// Deprecated: prefer DeregisterSession — teardown keyed by subdomain cannot
+// distinguish a stale session from a newer one that legitimately re-registered
+// the name. Kept for existing callers and tests.
 func (r *Registry) Deregister(subdomain string) {
 	r.mu.Lock()
 	sess, exists := r.sessions[subdomain]
@@ -403,23 +525,7 @@ func (r *Registry) Deregister(subdomain string) {
 		return
 	}
 
-	// Close TCP listener (if any) so the accept loop exits and the port frees.
-	if sess.TCPListener != nil {
-		sess.TCPListener.Close() //nolint:errcheck
-		r.releaseTCPPort(sess.TCPPort)
-	}
-
-	// Tear down any in-flight streams so ServeHTTP goroutines unblock.
-	sess.mu.Lock()
-	for _, st := range sess.streams {
-		st.reqW.CloseWithError(io.ErrClosedPipe)
-		st.respW.CloseWithError(io.ErrClosedPipe)
-	}
-	sess.mu.Unlock()
-
-	if err := r.db.CloseTunnel(sess.TunnelID); err != nil {
-		log.Error().Err(err).Str("tunnel_id", sess.TunnelID).Msg("closing tunnel in DB")
-	}
+	r.closeSession(sess)
 	log.Info().Str("subdomain", subdomain).Msg("tunnel deregistered")
 }
 
@@ -446,12 +552,17 @@ func (r *Registry) ActiveSessions() []*Session {
 // Send enqueues a control-plane frame for the WebSocket writer goroutine.
 // It blocks if the send buffer is full, since dropping a frame would silently
 // corrupt the stream protocol (a single dropped MsgData / MsgReqDone /
-// MsgClose hangs the request indefinitely on the other side). A 30s deadline
-// guards against a permanently stuck writer (e.g., dead client).
+// MsgClose hangs the request indefinitely on the other side). Two escape
+// hatches keep the block bounded: a 30s deadline guards against a permanently
+// stuck writer (e.g., dead client), and a session that has been kicked
+// (replaced or revoked) drops frames immediately — the connection is going
+// away anyway.
 func (s *Session) Send(msg []byte) {
 	select {
 	case s.send <- msg:
 		return
+	case <-s.kicked:
+		return // replaced/revoked — writer is closing the connection
 	default:
 	}
 	// Buffer is full — block briefly. If the writer is healthy, slots
@@ -460,6 +571,7 @@ func (s *Session) Send(msg []byte) {
 	defer timer.Stop()
 	select {
 	case s.send <- msg:
+	case <-s.kicked:
 	case <-timer.C:
 		log.Warn().Str("session", s.ID).Msg("send blocked >30s — dropping frame (slow client?)")
 	}

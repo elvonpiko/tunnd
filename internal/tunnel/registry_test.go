@@ -167,6 +167,133 @@ func TestDeregister_IsIdempotent(t *testing.T) {
 	r.Deregister("nonexistent") // must not panic
 }
 
+// ── Takeover (reconnect) semantics ────────────────────────────────────────────
+
+func TestRegister_SameTokenTakesOverSubdomain(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	first, err := r.Register("tok1", "myapp", "http", 3000)
+	if err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+
+	// The same token re-registering the same subdomain is a reconnect:
+	// the stale session must be replaced, not rejected.
+	second, err := r.Register("tok1", "myapp", "http", 3000)
+	if err != nil {
+		t.Fatalf("re-register same token: %v", err)
+	}
+
+	if got := r.Lookup("myapp"); got != second {
+		t.Errorf("Lookup after takeover = %p, want the new session %p", got, second)
+	}
+	if !first.IsKicked() {
+		t.Error("stale session must be kicked after takeover")
+	}
+	if first.KickReason() == "" {
+		t.Error("stale session must carry a kick reason for the close frame")
+	}
+
+	// The old tunnel must be closed in the DB; the new one active.
+	active, err := db.ListActiveTunnels()
+	if err != nil {
+		t.Fatalf("ListActiveTunnels: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, tr := range active {
+		ids[tr.ID] = true
+	}
+	if ids[first.TunnelID] {
+		t.Error("stale tunnel still marked active after takeover")
+	}
+	if !ids[second.TunnelID] {
+		t.Error("new tunnel not active after takeover")
+	}
+}
+
+func TestRegister_DifferentTokenStillRejected(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	if _, err := r.Register("tok1", "taken", "http", 3000); err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	if _, err := r.Register("tok2", "taken", "http", 8080); err == nil {
+		t.Fatal("expected error registering duplicate subdomain, got nil")
+	}
+}
+
+func TestDeregisterSession_StaleTeardownSparesNewSession(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	first, err := r.Register("tok1", "myapp", "http", 3000)
+	if err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	second, err := r.Register("tok1", "myapp", "http", 3000)
+	if err != nil {
+		t.Fatalf("takeover Register: %v", err)
+	}
+
+	// The first session's control-plane reader exits late (its deferred
+	// teardown runs after the takeover). It must not remove the new session.
+	r.DeregisterSession(first)
+
+	if got := r.Lookup("myapp"); got != second {
+		t.Fatalf("stale DeregisterSession removed the new session; Lookup = %p, want %p", got, second)
+	}
+}
+
+func TestDeregisterSession_RemovesOwnSession(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	sess, err := r.Register("tok1", "mine", "http", 3000)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	r.DeregisterSession(sess)
+	if r.Lookup("mine") != nil {
+		t.Error("expected nil after DeregisterSession")
+	}
+}
+
+func TestSession_SendUnblocksAfterKick(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	sess, err := r.Register("tok1", "flood", "http", 3000)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Fill the send buffer without a writer draining it. The loop exits as
+	// soon as it observes the kick — which it can only do if the Send that
+	// was blocked on the full buffer returns promptly (not after 30s).
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for !sess.IsKicked() {
+			sess.Send([]byte("x"))
+		}
+	}()
+
+	// Give the flooder a moment to reach the full-buffer path, then kick.
+	// The flooder must terminate promptly instead of blocking for 30s per
+	// frame.
+	time.Sleep(50 * time.Millisecond)
+	sess.Kick("test kick")
+
+	select {
+	case <-done:
+		// success — Send returned promptly after the kick
+	case <-time.After(2 * time.Second):
+		t.Fatal("Send did not unblock within 2s of Kick")
+	}
+}
+
 // ── Lookup ────────────────────────────────────────────────────────────────────
 
 func TestLookup_ReturnsNilForUnknown(t *testing.T) {

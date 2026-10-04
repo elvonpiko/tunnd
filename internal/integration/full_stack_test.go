@@ -5,6 +5,7 @@ package integration
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/elvonpiko/tunnd/pkg/proto"
 )
 
 // newViteLikeUpstream constructs a fake Vite-style upstream that blocks
@@ -55,6 +58,66 @@ func newPermissiveUpstream(t *testing.T) (*httptest.Server, int) {
 	}))
 	t.Cleanup(srv.Close)
 	return srv, portFromURL(t, srv.URL)
+}
+
+// newBodyUpstream returns a fake upstream that always responds with the
+// given body. Used by takeover tests to tell which client served traffic.
+func newBodyUpstream(t *testing.T, body string) (*httptest.Server, int) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, portFromURL(t, srv.URL)
+}
+
+// TestE2E_ReconnectTakeover verifies reconnect semantics end to end: a new
+// client registering the same subdomain with the SAME token takes over the
+// tunnel, the stale session's WebSocket is closed with the takeover close
+// code, and public traffic immediately flows through the new client.
+//
+// This mirrors the real-world "network blip → tunnd reconnects" path which
+// previously failed with subdomain_in_use and left the operator to notice.
+func TestE2E_ReconnectTakeover(t *testing.T) {
+	h := newHarness(t, "tunnd.example")
+
+	_, portA := newBodyUpstream(t, "from-a")
+	_, portB := newBodyUpstream(t, "from-b")
+
+	clientA, sub := h.startClient(t, clientOpts{subdomain: "reconnect", localPort: portA})
+	waitForRegistry()
+	publicHost := sub + ".tunnd.example"
+
+	status, body := h.doPublicRequest(t, publicHost)
+	if status != http.StatusOK || body != "from-a" {
+		t.Fatalf("before takeover: status=%d body=%q, want 200 %q", status, body, "from-a")
+	}
+
+	// "Reconnect": same token, same subdomain, brand-new WebSocket.
+	_, sub2 := h.startClient(t, clientOpts{subdomain: "reconnect", localPort: portB})
+	if sub2 != sub {
+		t.Fatalf("takeover changed the subdomain: got %q, want %q", sub2, sub)
+	}
+	waitForRegistry()
+
+	// Public traffic now flows through the new client.
+	status, body = h.doPublicRequest(t, publicHost)
+	if status != http.StatusOK || body != "from-b" {
+		t.Fatalf("after takeover: status=%d body=%q, want 200 %q", status, body, "from-b")
+	}
+
+	// The stale client's WebSocket must be closed with the takeover code so
+	// it exits instead of fighting back.
+	select {
+	case err := <-clientA.closeErrCh:
+		var ce *websocket.CloseError
+		if !errors.As(err, &ce) || ce.Code != proto.CloseCodeSessionTakenOver {
+			t.Fatalf("stale client close error = %v, want close code %d", err, proto.CloseCodeSessionTakenOver)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale client WebSocket was not closed within 5s of takeover")
+	}
 }
 
 // waitForRegistry polls the registry briefly so race-prone tests don't
