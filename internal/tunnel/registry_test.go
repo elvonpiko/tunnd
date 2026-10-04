@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -498,6 +499,36 @@ func TestRegister_RandomSubdomainGeneration(t *testing.T) {
 			t.Errorf("[%d] random subdomain %q was generated twice", i, sess.Subdomain)
 		}
 		seen[sess.Subdomain] = true
+	}
+}
+
+// TestRandomSubdomain_Entropy verifies random subdomains carry a
+// crypto/random suffix large enough that active tunnels cannot be found by
+// enumerating the (only 396) word-pair combinations.
+func TestRandomSubdomain_Entropy(t *testing.T) {
+	// Every generated name must be "<word>-<word>-<6 base32 chars>" and must
+	// pass the subdomain validator.
+	format := regexp.MustCompile(`^[a-z]+-[a-z]+-[a-z2-7]{6}$`)
+	validator := tunnel.NewSubdomainValidator(nil)
+
+	suffixes := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		r := tunnel.RandomSubdomain()
+		if !format.MatchString(r) {
+			t.Fatalf("random subdomain %q does not match expected shape", r)
+		}
+		if _, err := validator.ValidateAndSanitize(r); err != nil {
+			t.Fatalf("random subdomain %q rejected by validator: %v", r, err)
+		}
+		parts := strings.Split(r, "-")
+		suffix := parts[len(parts)-1]
+		if suffixes[suffix] {
+			t.Fatalf("suffix %q repeated after %d samples — entropy is broken", suffix, i+1)
+		}
+		suffixes[suffix] = true
+	}
+	if len(suffixes) != 100 {
+		t.Errorf("expected 100 distinct suffixes, got %d", len(suffixes))
 	}
 }
 

@@ -21,9 +21,9 @@ package tunnel
 
 import (
 	"bufio"
+	"crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 	"strings"
@@ -244,7 +244,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 	if subdomain == "" {
 		// Generate a random subdomain and ensure it is not already taken.
 		for {
-			candidate := randomSubdomain()
+			candidate := RandomSubdomain()
 			if _, exists := r.sessions[candidate]; !exists {
 				subdomain = candidate
 				break
@@ -969,6 +969,22 @@ func extractSubdomain(host, baseDomain string) string {
 
 // ── Random subdomain ──────────────────────────────────────────────────────────
 
+// The word pair keeps random tunnel URLs pronounceable ("brave-river"), the
+// crypto/rand suffix makes them unguessable. The pair alone spans only
+// 22 × 18 = 396 combinations — a scanner could probe every active random
+// tunnel in a few hundred requests. The 6-char base32 suffix adds 30 bits,
+// for ~2^38.6 total (~425 billion) — enumeration stops being practical.
+const (
+	// randomSuffixLen is the number of crypto/rand base32 chars appended
+	// to the word pair: 6 chars × 5 bits = 30 bits of real entropy.
+	randomSuffixLen = 6
+
+	// suffixAlphabet is lowercase base32 (RFC 4648, unpadded): every char
+	// is valid in a DNS label and accepted by the subdomain validator.
+	// 32 divides 256 exactly, so byte-modulo selection has no bias.
+	suffixAlphabet = "abcdefghijklmnopqrstuvwxyz234567"
+)
+
 var (
 	adjectives = []string{
 		"autumn", "brave", "calm", "daring", "eager", "fancy", "gentle",
@@ -980,14 +996,24 @@ var (
 		"cloud", "valley", "creek", "ridge", "meadow", "harbor",
 		"canyon", "delta", "dune", "fjord", "glade", "plain",
 	}
-	rng   = rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec
-	rngMu sync.Mutex
 )
 
-func randomSubdomain() string {
-	rngMu.Lock()
-	adj := adjectives[rng.Intn(len(adjectives))]
-	noun := nouns[rng.Intn(len(nouns))]
-	rngMu.Unlock()
-	return fmt.Sprintf("%s-%s", adj, noun)
+// RandomSubdomain generates a random subdomain:
+// "<adjective>-<noun>-<suffix>", e.g. "brave-river-q7k2mx".
+func RandomSubdomain() string {
+	buf := make([]byte, randomSuffixLen+2)
+	if _, err := rand.Read(buf); err != nil {
+		// crypto/rand.Reader does not fail on supported platforms (Go's
+		// own crypto primitives panic on catastrophic entropy failure).
+		// If we ever land here, refusing to mint a guessable subdomain is
+		// the only safe behavior.
+		panic(fmt.Sprintf("crypto/rand unavailable: %v", err))
+	}
+	adj := adjectives[int(buf[0])%len(adjectives)]
+	noun := nouns[int(buf[1])%len(nouns)]
+	suffix := make([]byte, randomSuffixLen)
+	for i := range suffix {
+		suffix[i] = suffixAlphabet[int(buf[2+i])%len(suffixAlphabet)]
+	}
+	return adj + "-" + noun + "-" + string(suffix)
 }
