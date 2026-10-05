@@ -529,6 +529,61 @@ func (r *Registry) Deregister(subdomain string) {
 	log.Info().Str("subdomain", subdomain).Msg("tunnel deregistered")
 }
 
+// KillSessionsByToken terminates every active session belonging to the given
+// token — used when the token is revoked. Each session is removed from the
+// registry, its streams torn down, and its WebSocket closed with
+// CloseCodeSessionTakenOver (reason carried to the client) so it exits
+// instead of reconnecting with the dead token. Returns the number of sessions
+// killed.
+func (r *Registry) KillSessionsByToken(tokenID, reason string) int {
+	r.mu.Lock()
+	var doomed []*Session
+	for sub, sess := range r.sessions {
+		if sess.TokenID == tokenID {
+			doomed = append(doomed, sess)
+			delete(r.sessions, sub)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, sess := range doomed {
+		r.closeSession(sess)
+		sess.Kick(reason)
+	}
+	if len(doomed) > 0 {
+		log.Warn().Str("token_id", tokenID).Int("sessions", len(doomed)).Msg("killed sessions for token")
+	}
+	return len(doomed)
+}
+
+// RevalidateTokens checks every active session's token against the DB and
+// kills sessions whose token is gone or disabled.
+//
+// Revocation normally takes effect immediately (the admin API calls
+// KillSessionsByToken), but out-of-band paths exist — most notably
+// `tunnd-server token revoke`, which is a separate process with no access to
+// the running registry. This periodic sweep closes that gap: a revoked
+// token's tunnels die within one period no matter how they were revoked.
+func (r *Registry) RevalidateTokens() {
+	r.mu.Lock()
+	tokenIDs := make(map[string]bool, len(r.sessions))
+	for _, sess := range r.sessions {
+		tokenIDs[sess.TokenID] = true
+	}
+	r.mu.Unlock()
+
+	for tokenID := range tokenIDs {
+		tok, err := r.db.GetTokenByID(tokenID)
+		if err != nil {
+			log.Error().Err(err).Str("token_id", tokenID).Msg("revalidating token")
+			continue
+		}
+		if tok == nil || !tok.Enabled {
+			r.KillSessionsByToken(tokenID, "auth token revoked")
+		}
+	}
+}
+
 // Lookup returns the Session for a subdomain, or nil if not found.
 func (r *Registry) Lookup(subdomain string) *Session {
 	r.mu.RLock()

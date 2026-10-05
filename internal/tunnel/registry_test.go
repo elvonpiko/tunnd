@@ -295,6 +295,74 @@ func TestSession_SendUnblocksAfterKick(t *testing.T) {
 	}
 }
 
+// ── Revocation ────────────────────────────────────────────────────────────────
+
+func TestKillSessionsByToken(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	a, err := r.Register("tok1", "one", "http", 3000)
+	if err != nil {
+		t.Fatalf("Register one: %v", err)
+	}
+	b, err := r.Register("tok1", "two", "http", 3001)
+	if err != nil {
+		t.Fatalf("Register two: %v", err)
+	}
+	c, err := r.Register("tok2", "three", "http", 3002)
+	if err != nil {
+		t.Fatalf("Register three: %v", err)
+	}
+
+	if n := r.KillSessionsByToken("tok1", "test revoke"); n != 2 {
+		t.Fatalf("KillSessionsByToken = %d sessions, want 2", n)
+	}
+	if r.Lookup("one") != nil || r.Lookup("two") != nil {
+		t.Error("revoked token's sessions must be gone from the registry")
+	}
+	if got := r.Lookup("three"); got != c {
+		t.Error("other token's session must be unaffected")
+	}
+	if !a.IsKicked() || !b.IsKicked() {
+		t.Error("revoked token's sessions must be kicked (WS close 4429)")
+	}
+	if c.IsKicked() {
+		t.Error("unrelated session must not be kicked")
+	}
+
+	// Killing a token with no sessions is a no-op.
+	if n := r.KillSessionsByToken("tok1", "again"); n != 0 {
+		t.Errorf("second kill = %d, want 0", n)
+	}
+}
+
+func TestRevalidateTokens_KillsRevokedTokensSessions(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+
+	if _, err := r.Register("tok1", "keep", "http", 3000); err != nil {
+		t.Fatalf("Register keep: %v", err)
+	}
+	if _, err := r.Register("tok3", "killme", "http", 3001); err != nil {
+		t.Fatalf("Register killme: %v", err)
+	}
+
+	// Out-of-band revocation: flip the token directly in the DB, the way
+	// `tunnd-server token revoke` (a separate process) does.
+	if err := db.RevokeToken("tok3"); err != nil {
+		t.Fatalf("RevokeToken: %v", err)
+	}
+
+	r.RevalidateTokens()
+
+	if r.Lookup("keep") == nil {
+		t.Error("session of an enabled token must survive revalidation")
+	}
+	if r.Lookup("killme") != nil {
+		t.Error("session of a revoked token must be killed by revalidation")
+	}
+}
+
 // ── Lookup ────────────────────────────────────────────────────────────────────
 
 func TestLookup_ReturnsNilForUnknown(t *testing.T) {

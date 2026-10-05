@@ -593,8 +593,12 @@ func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request) {
 		apiErr(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Info().Str("token_id", id).Msg("token revoked via admin API")
-	apiOK(w, map[string]any{"revoked": id})
+	// Revocation must reach connected clients, not just future registrations:
+	// kill every active session this token owns. The kicked clients receive
+	// close code 4429 ("auth token revoked") and exit without reconnecting.
+	killed := h.registry.KillSessionsByToken(id, "auth token revoked")
+	log.Info().Str("token_id", id).Int("sessions_killed", killed).Msg("token revoked via admin API")
+	apiOK(w, map[string]any{"revoked": id, "sessions_killed": killed})
 }
 
 // ── UI ─────────────────────────────────────────────────────────────────────────

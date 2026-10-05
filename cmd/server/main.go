@@ -163,6 +163,22 @@ func runServer(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Periodic token revalidation: revocation via `tunnd-server token revoke`
+	// (a separate process with no access to this registry) must still
+	// disconnect that token's active tunnels — within one period.
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				registry.RevalidateTokens()
+			}
+		}
+	}()
+
 	errCh := make(chan error, 2)
 
 	go func() {

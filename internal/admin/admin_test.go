@@ -927,3 +927,53 @@ func TestChangePassword_RefusedWhenConfigPassword(t *testing.T) {
 		t.Errorf("status = %d, want 409 when admin_password is config-controlled", w.Code)
 	}
 }
+
+func TestRevokeToken_KillsActiveSessions(t *testing.T) {
+	// Build the full stack manually: we need the registry handle to plant
+	// an active session for the token being revoked.
+	dbCounter++
+	uri := fmt.Sprintf("file:testdb%d?mode=memory&cache=shared", dbCounter)
+	db, err := store.Open(uri)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.SetSetting("admin_password", "testpassword1234"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	authSvc := auth.New(db)
+	registry := tunnel.New(db, "tunnel.test")
+	h := admin.New(authSvc, registry, db, "")
+
+	tok, err := authSvc.CreateToken("laptop", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if _, err := registry.Register(tok.ID, "revokeme", "http", 3000); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	cookie := loginCookie(t, h, "testpassword1234")
+	r := httptest.NewRequest(http.MethodDelete, "/api/tokens/"+tok.ID, nil)
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("revoke status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// The token's session must be gone from the registry immediately —
+	// revocation that leaves tunnels running is not revocation.
+	if registry.Lookup("revokeme") != nil {
+		t.Fatal("session still active after token revocation")
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if killed, _ := body["sessions_killed"].(float64); killed != 1 {
+		t.Errorf("sessions_killed = %v, want 1", body["sessions_killed"])
+	}
+}
