@@ -17,6 +17,7 @@ dist/
 *.out
 coverage.out
 coverage.html
+.gocache/
 
 # Node / Astro (docs site)
 node_modules/
