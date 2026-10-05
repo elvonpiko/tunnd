@@ -230,9 +230,9 @@ See the [Reverse Proxy guide](/deployment/reverse-proxy/caddy) and [Docker deplo
 |---|---|---|
 | `443` | Public tunnel traffic (HTTPS) | `TUNND_HTTP_PORT` |
 | `80` | ACME HTTP-01 challenge (Let's Encrypt mode only) | Not configurable |
-| `9091` | Admin API and dashboard | `TUNND_ADMIN_PORT` |
+| `9091` | Admin API and dashboard — binds `127.0.0.1` by default | `TUNND_ADMIN_PORT`, interface via `TUNND_ADMIN_BIND` |
 
-When running behind a reverse proxy, only port `9091` needs to be reachable by the proxy (not the public internet).
+The admin dashboard is also served on the base domain over the public port (`https://your-domain.tld`), so the loopback-bound admin port never has to be reachable by anything but the server itself. Behind a reverse proxy, only the public HTTP port needs to be reachable by the proxy; the admin port stays on loopback (SSH tunnel it if you need it directly).
 
 ---
 
@@ -244,7 +244,7 @@ When running behind a reverse proxy, only port `9091` needs to be reachable by t
 | WebSocket library | `github.com/gorilla/websocket` |
 | CLI framework | `github.com/spf13/cobra` |
 | Configuration | `github.com/spf13/viper` |
-| Database | SQLite via `github.com/mattn/go-sqlite3` |
+| Database | SQLite via `modernc.org/sqlite` (CGO-free) |
 | TLS automation | `golang.org/x/crypto/acme/autocert` |
 | Logging | `github.com/rs/zerolog` |
 | UUID generation | `github.com/google/uuid` |

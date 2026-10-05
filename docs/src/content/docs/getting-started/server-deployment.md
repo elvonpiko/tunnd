@@ -152,9 +152,11 @@ sudo -u tunnd tunnd-server --config /etc/tunnd/tunnd-server.yaml
 
 ## First login (admin setup)
 
-Visit your admin dashboard — `https://tunnd.yourdomain.com` or `http://<server-ip>:9091`.
+Visit your admin dashboard at `https://tunnd.yourdomain.com`.
 
-**First time:** you'll see a setup page to create your admin password. Set it once — it's stored in the database, no config file entry needed.
+(Prefer the raw admin port? It binds `127.0.0.1` by default — reach it via `ssh -L 9091:localhost:9091 user@your-server` → `http://localhost:9091`, or set `admin_bind: "0.0.0.0"` and firewall port `9091` to trusted IPs.)
+
+**First time:** you'll see a setup page to create your admin password. Set it once — it's stored as a bcrypt hash in the database, no config file entry needed. You can change it later from **Settings → Change admin password**.
 
 After that, you'll see the standard login page on every visit.
 

@@ -58,6 +58,26 @@ admin_port: 9096
 
 ---
 
+### `admin_bind`
+
+Interface the admin dashboard binds to.
+
+Default: `127.0.0.1` — the admin port is **loopback-only** and not reachable from the network. The dashboard remains reachable over HTTPS on the base domain (`https://your-domain.tld`) and via SSH tunnel.
+
+Set `0.0.0.0` to listen on all interfaces — for example when Docker's published port mapping is your access control, or when you deliberately want LAN access. Fire-wall it accordingly.
+
+```yaml
+admin_bind: "0.0.0.0"   # opt back into all-interfaces binding
+```
+
+Environment variable: `TUNND_ADMIN_BIND`
+
+::: warning[Changed in v0.2.1 — breaking]
+Previously the admin port bound to all interfaces. If you access the dashboard via `http://<server-ip>:9091`, add `admin_bind: "0.0.0.0"` to keep that setup — or better, switch to the base-domain HTTPS route or an SSH tunnel.
+:::
+
+---
+
 ### `db_path`
 
 SQLite database file path. The directory is created automatically.
@@ -74,13 +94,15 @@ db_path: "/data/tunnd.db"
 
 Admin dashboard password. **Optional at config level** — if left empty, the server shows a one-time **bootstrap setup page** the first time you visit the dashboard, where you set the password interactively.
 
-Once set via the dashboard, the password is stored in the database. You can also set it here to skip the bootstrap step entirely.
+Passwords set via the dashboard (or changed later in **Settings → Change admin password**) are stored as bcrypt hashes in the database — plaintext is never persisted. Changing the password also signs out every other admin session.
+
+Setting it here still works (setup scripts use it), but while it's set the dashboard change-password flow is disabled — the config value would win after a restart anyway. Prefer the bootstrap/dashboard flow for new installs.
 
 ```yaml
 # Leave empty to use the first-run bootstrap flow
 # admin_password: ""
 
-# Or set explicitly to skip bootstrap
+# Or set explicitly (legacy / unattended installs)
 # admin_password: "your-strong-password"
 ```
 

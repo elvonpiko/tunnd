@@ -62,12 +62,15 @@ See [Caddy Reverse Proxy](/deployment/reverse-proxy/caddy) for Caddyfile configu
 | `TUNND_TLS_KEY_FILE` | Manual TLS only | Path to private key PEM |
 | `TUNND_HTTP_PORT` | No | Tunnel port (default: `443`) |
 | `TUNND_ADMIN_PORT` | No | Admin port (default: `9091`) |
+| `TUNND_ADMIN_BIND` | No | Admin interface (default: `127.0.0.1` — loopback only; see below) |
 | `TUNND_DB_PATH` | No | SQLite path (default: `/data/tunnd.db`) |
 | `TUNND_ACME_CACHE_DIR` | No | Let's Encrypt cache (default: `/data/.autocert-cache`) |
 | `TUNND_LOG_LEVEL` | No | `debug`/`info`/`warn`/`error` (default: `info`) |
 | `TUNND_LOG_FORMAT` | No | `pretty`/`json` (default: `pretty`) |
 
 `TUNND_ADMIN_PASSWORD` is **not required** — set your password on first login via the dashboard.
+
+**About `TUNND_ADMIN_BIND`:** the admin port binds `127.0.0.1` inside the container by default, so a published `-p 9091:9091` mapping alone won't expose it (and usually shouldn't — use the base-domain HTTPS route instead). If you deliberately want `http://<host>:9091`, add `-e TUNND_ADMIN_BIND=0.0.0.0` so the listener accepts the Docker-forwarded connections, and firewall the published port to trusted IPs. The bundled `docker-compose.yml` and `docker-compose.manual-tls.yml` set this variable because their published-port mapping is the intended access control.
 
 ---
 
@@ -93,12 +96,14 @@ sudo chown -R 1000:1000 /opt/tunnd/data
 docker run -d \
   --name tunnd \
   --restart unless-stopped \
-  -p 80:80 -p 443:443 -p 9091:9091 \
+  -p 80:80 -p 443:443 \
   -v tunnd-data:/data \
   -e TUNND_DOMAIN=tunnd.yourdomain.com \
   -e TUNND_TLS_EMAIL=you@example.com \
   ghcr.io/elvonpiko/tunnd-server:latest
 ```
+
+The dashboard is served at `https://tunnd.yourdomain.com` on first visit. To also expose the raw admin port, publish it and opt in: `-p 9091:9091 -e TUNND_ADMIN_BIND=0.0.0.0`.
 
 ---
 

@@ -191,7 +191,7 @@ curl -b 'tunnd_session=<token>' \
 
 ### DELETE /api/tokens/{id}
 
-Revoke a token. Active tunnels using it are immediately disconnected.
+Revoke a token. Active tunnels using it are immediately disconnected (their clients see close code 4429 with reason "auth token revoked" and exit without reconnecting).
 
 ```bash
 curl -b 'tunnd_session=<token>' \
@@ -200,8 +200,30 @@ curl -b 'tunnd_session=<token>' \
 
 **Response:**
 ```json
-{ "revoked": "token-uuid" }
+{ "revoked": "token-uuid", "sessions_killed": 2 }
 ```
+
+`sessions_killed` is the number of live tunnels that were disconnected by this revocation.
+
+---
+
+### POST /api/password
+
+Change the admin password (when it's DB-stored, i.e. not set via config/env). Requires the current password; stores a bcrypt hash and invalidates every admin session except the caller's.
+
+```bash
+curl -b 'tunnd_session=<token>' \
+  -X POST http://localhost:9091/api/password \
+  -H 'Content-Type: application/json' \
+  -d '{"current_password":"...","new_password":"..."}'
+```
+
+**Response:**
+```json
+{ "changed": true }
+```
+
+Returns `409` when the password is managed via `admin_password` in the config file / env var — change it there instead.
 
 ---
 
@@ -215,7 +237,10 @@ curl -b 'tunnd_session=<token>' \
 |--------|---------|
 | `400` | Bad request (invalid body or missing params) |
 | `401` | Not authenticated — log in first |
+| `403` | Wrong current password, or the action isn't allowed in the current mode |
 | `404` | Endpoint or resource not found |
+| `409` | Conflict — e.g. password change requested while `admin_password` is set via config |
+| `429` | Rate limited — too many failed logins from your IP (admin login: 5 / 15 min) |
 | `503` | Server not configured — visit `/setup` |
 | `500` | Server error — check logs |
 

@@ -21,6 +21,13 @@ http_port: 9095
 # Port for the admin dashboard and REST API.
 admin_port: 9096
 
+# Interface the admin dashboard binds to. Default 127.0.0.1: the admin
+# port is loopback-only — the dashboard is served over HTTPS on the base
+# domain (https://tunnd.yourdomain.com) and reachable via SSH tunnel.
+# Set "0.0.0.0" only if something else controls access (e.g. Docker port
+# mapping, or a firewall rule limited to trusted IPs).
+# admin_bind: "127.0.0.1"
+
 # ── Storage ───────────────────────────────────────────────────────────────────
 
 # Path to the SQLite database file.

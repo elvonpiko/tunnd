@@ -257,6 +257,40 @@ Client                                  Server
   |←-- [connection closed] -------------- |
 ```
 
+Failed handshakes are rate-limited per source IP: 10 failures per minute,
+after which the server answers `429 Too Many Requests` before the WebSocket
+upgrade. Successful registrations reset the budget.
+
+---
+
+## Session Takeover & Close Code 4429
+
+A new `register` for a subdomain held by **the same token** is a takeover —
+the normal reconnect path. The stale session is replaced immediately; its
+WebSocket is closed with application close code **4429** and a human-readable
+reason in the close text:
+
+```
+Client A (stale)                         Server
+  |                                        |
+  |        [network blip on A's conn]      |
+  |                                        |
+Client B (same token, reconnecting)        |
+  |--- register (my-app) ----------------→ |
+  |                                        |  kicks session A
+  |←-- 101 + registered ------------------ |
+  |                                        |
+A |←-- close frame (4429) ----------------- |
+```
+
+A client that receives close code 4429 **must not reconnect automatically** —
+reconnecting would fight the new owner of the subdomain. The official client
+prints the server's close reason (e.g. *"subdomain \"my-app\" re-registered
+by a newer session of the same token"*, or *"auth token revoked"*) and exits.
+
+Close code 4429 is also used when an operator revokes the token: revocation
+kills all of that token's active tunnels, not just future registrations.
+
 ---
 
 ## Stream Lifecycle
@@ -286,9 +320,13 @@ Multiple streams can be in-flight simultaneously on the same WebSocket connectio
 
 | Code | Trigger | Description |
 |---|---|---|
-| `subdomain_in_use` | `register` | The requested subdomain is already claimed by an active session |
+| `subdomain_in_use` | `register` | The requested subdomain is already claimed by an active session **of a different token**. Same-token re-registration takes over instead (see [Session Takeover](#session-takeover--close-code-4429)). |
 | `invalid_subdomain` | `register` | The subdomain failed validation (see rules below) |
+| `tunnel_limit_reached` | `register` | The token already has its maximum number of concurrent tunnels (`max_tunnels_per_token`) |
+| `tcp_port_unavailable` | `register` | No free port in the server's TCP range for a `tcp` tunnel |
 | `handshake_failed` | `register` | Authentication failed or protocol error (bad token, malformed message, wrong message type) |
+
+A client that receives `subdomain_in_use` or `tunnel_limit_reached` should treat it as **transient during a reconnect** — the server may still be counting a stale session of the same token until its WebSocket times out (~90 seconds). The official client retries these with exponential backoff for up to ~3 minutes before giving up.
 
 ### Subdomain Validation Rules
 
@@ -310,11 +348,11 @@ A custom subdomain is rejected with `invalid_subdomain` if any of these conditio
 
 ## Random Subdomains
 
-When no subdomain is requested (or `subdomain` is omitted from the `register` payload), the server generates a random subdomain using the pattern `{adjective}-{noun}`, for example:
+When no subdomain is requested (or `subdomain` is omitted from the `register` payload), the server generates a random subdomain using the pattern `{adjective}-{noun}-{suffix}`, where the suffix is 6 random base32 characters (`a-z`, `2-7`) from a cryptographic random source — ~2.8 × 10³⁸ possible suffixes, so guessing a random tunnel URL is impractical:
 
-- `happy-river`
-- `brave-mountain`
-- `calm-ocean`
+- `happy-river-4tq7zm`
+- `brave-mountain-x2j9fa`
+- `calm-ocean-9vk3m4`
 
 The server guarantees uniqueness by retrying generation if there is a collision.
 

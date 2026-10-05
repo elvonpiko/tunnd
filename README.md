@@ -145,7 +145,7 @@ WebSocket and SSE upgrades pass through transparently on every HTTP tunnel — `
 
 - A VPS (any provider — 1 vCPU, 512 MB RAM is plenty)
 - A domain with DNS access
-- Ports 80, 443, and 9091 open
+- Ports 80 and 443 open (the admin port binds to `127.0.0.1` — no need to open it)
 - A range of TCP ports open if you plan to use `tunnd tcp` (default: `20000–20100`)
 
 ### DNS setup
@@ -266,7 +266,7 @@ tunnd-server version
 
 ## Admin API
 
-Login establishes a session cookie (12-hour TTL). The dashboard is served on the base domain over HTTPS (`https://tunnd.yourdomain.com`) and on the admin port (`9091` by default) — visit `http://<server-ip>:9091` or, behind a reverse proxy, your admin domain.
+Login establishes a session cookie (12-hour TTL). The dashboard is served on the base domain over HTTPS (`https://tunnd.yourdomain.com`) and on the admin port (`9091` by default, loopback-bound — use an SSH tunnel or set `admin_bind: "0.0.0.0"` for direct access).
 
 ```
 GET    /api/stats                       server stats
@@ -275,7 +275,8 @@ GET    /api/tunnels?limit=50&offset=0   tunnel history
 GET    /api/tunnels/{id}/requests       request log for a tunnel
 GET    /api/tokens                      list tokens
 POST   /api/tokens                      create a token
-DELETE /api/tokens/{id}                 revoke a token
+DELETE /api/tokens/{id}                 revoke a token (kills its active tunnels)
+POST   /api/password                    change admin password (bcrypt, signs out other sessions)
 ```
 
 Full reference in the [Admin API docs](https://elvonpiko.github.io/tunnd/api/admin-api/).
@@ -337,6 +338,8 @@ internal/
   admin/            REST API + embedded dashboard, login + bootstrap
   store/            SQLite persistence (tokens, tunnels, request logs, settings)
   tunnel/           in-memory registry + HTTP reverse proxy + TCP listener
+  publicsrv/        production public listener (no per-request write timeouts)
+  ratelimit/        per-IP fixed-window limiter (logins, handshakes)
 pkg/
   proto/            wire protocol (JSON envelopes + binary data frames)
 docs/
@@ -349,9 +352,13 @@ docs/
 ## Security
 
 - All tunnel traffic is TLS-encrypted (HTTPS / WSS)
-- Client auth uses 192-bit cryptographically random tokens (`tnnd_<48 hex>`)
+- Client auth uses 192-bit cryptographically random tokens (`tnnd_<48 hex>`); revoking a token immediately disconnects its active tunnels
+- Random tunnel subdomains are unguessable: word pair + 6 random base32 chars (~2.8 × 10³⁸ space)
+- Admin passwords are stored as bcrypt hashes and changeable from the dashboard; other admin sessions are signed out on change
+- Brute force is throttled at both entry points: admin login (5 failures / IP / 15 min) and control-plane handshake (10 failures / IP / min)
+- The admin port binds to `127.0.0.1` by default — the dashboard is reachable over HTTPS on the base domain, or via SSH tunnel
+- Reconnecting clients take over their own stale sessions instead of colliding; stolen-session conflicts end with close code 4429 (no reconnect loops)
 - Admin sessions use HttpOnly SameSite=Strict cookies, marked `Secure` over HTTPS
-- The admin dashboard is reachable over HTTPS on the base domain, or on the admin port for reverse-proxy / LAN access
 - Token values are shown only at creation; list APIs return only a hint
 - SQLite uses WAL mode with foreign-key enforcement
 - The systemd unit runs as an unprivileged `tunnd` user with `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp`, `PrivateDevices`, and only the `CAP_NET_BIND_SERVICE` capability (for binding ports 80/443)

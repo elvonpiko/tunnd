@@ -146,10 +146,13 @@ dig +short myapp.tunnd.yourdomain.com
 ## Admin dashboard inaccessible
 
 The dashboard is reachable two ways: over HTTPS on the base domain
-(`https://tunnd.yourdomain.com`) and on the admin port (`http://<server-ip>:9091`).
+(`https://tunnd.yourdomain.com`) and on the admin port — which binds
+`127.0.0.1` by default, so use an SSH tunnel
+(`ssh -L 9091:localhost:9091 user@your-server`) or opt in with
+`admin_bind: "0.0.0.0"` for `http://<server-ip>:9091`.
 
 ```bash
-# Is the admin port listening?
+# Is the admin port listening? (loopback since v0.2.1)
 ss -tlnp | grep 9091
 
 # Test locally on the server
@@ -161,7 +164,7 @@ curl -I https://tunnd.yourdomain.com/login
 
 If the base-domain URL 404s, check that the non-wildcard A record for
 `tunnd.yourdomain.com` resolves to your server. Behind Caddy, the admin port
-doesn't need to be publicly open.
+doesn't need to be publicly open (or bound to anything but loopback).
 
 ---
 
