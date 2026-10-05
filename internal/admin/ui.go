@@ -326,6 +326,7 @@ td.mono{font-size:12px}
 <div class="mobile-menu" id="mobile-menu">
   <button class="mobile-menu-link active" id="mm-tunnels" onclick="mobileNav('tunnels')">Tunnels</button>
   <button class="mobile-menu-link" id="mm-tokens" onclick="mobileNav('tokens')">Tokens</button>
+  <button class="mobile-menu-link" id="mm-settings" onclick="mobileNav('settings')">Settings</button>
   <div class="mobile-menu-divider"></div>
   <form method="POST" action="/logout" style="margin:0">
     <button class="mobile-menu-signout" type="submit">Sign out</button>
@@ -343,8 +344,9 @@ td.mono{font-size:12px}
   </a>
   <div class="nav-divider"></div>
   <div class="nav-links">
-    <button class="nav-link active" onclick="showView('tunnels',this)">Tunnels</button>
-    <button class="nav-link" onclick="showView('tokens',this)">Tokens</button>
+    <button class="nav-link active" data-view="tunnels" onclick="showView('tunnels')">Tunnels</button>
+    <button class="nav-link" data-view="tokens" onclick="showView('tokens')">Tokens</button>
+    <button class="nav-link" data-view="settings" onclick="showView('settings')">Settings</button>
   </div>
   <div class="nav-right">
     <span class="pill">Active <b id="na">—</b></span>
@@ -425,6 +427,28 @@ td.mono{font-size:12px}
   </p>
 </div>
 
+<!-- ── Settings view ── -->
+<div class="view" id="view-settings">
+  <div class="ph">
+    <div>
+      <div class="ph-title">Settings</div>
+      <div class="ph-sub">Dashboard configuration</div>
+    </div>
+  </div>
+  <div class="section-title">Change admin password</div>
+  <div style="max-width:420px">
+    <div class="field"><label>Current password</label><input type="password" id="pw-current" autocomplete="current-password"></div>
+    <div class="field"><label>New password</label><input type="password" id="pw-new" placeholder="At least 12 characters" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm new password</label><input type="password" id="pw-confirm" autocomplete="new-password"></div>
+    <div id="pw-msg" style="font-size:12px;margin-top:8px;display:none"></div>
+    <button class="btn btn-p" id="btn-chpw" onclick="doChangePassword()">Update password</button>
+  </div>
+  <p style="font-size:11px;color:var(--muted);margin-top:10px">
+    Changing the password signs out every other dashboard session — your current one stays logged in.
+    Passwords are stored as bcrypt hashes.
+  </p>
+</div>
+
 </main>
 
 <!-- ── Create token modal ── -->
@@ -499,18 +523,14 @@ function closeMenu() {
 
 function mobileNav(name) {
   closeMenu();
-  document.getElementById('mm-tunnels').classList.toggle('active', name === 'tunnels');
-  document.getElementById('mm-tokens').classList.toggle('active', name === 'tokens');
-  const desktopBtns = document.querySelectorAll('.nav-link');
-  desktopBtns.forEach((b, i) => b.classList.toggle('active', (i === 0 && name === 'tunnels') || (i === 1 && name === 'tokens')));
-  switchView(name);
+  showView(name);
 }
 
-function showView(name, btn) {
-  document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+function showView(name) {
+  document.querySelectorAll('.nav-link').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   document.getElementById('mm-tunnels').classList.toggle('active', name === 'tunnels');
   document.getElementById('mm-tokens').classList.toggle('active', name === 'tokens');
+  document.getElementById('mm-settings').classList.toggle('active', name === 'settings');
   switchView(name);
 }
 
@@ -522,9 +542,10 @@ function switchView(name) {
   if (name === 'tunnels') {
     loadTunnels();
     startTunnelsRefresh();
-  } else {
+  } else if (name === 'tokens') {
     loadTokens();
   }
+  // 'settings' is a static view — nothing to load or auto-refresh.
 }
 
 document.addEventListener('click', e => {
@@ -759,6 +780,47 @@ document.getElementById('m-revoke').addEventListener('click', e => { if(e.target
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Change password ─────────────────────────────────────────────────────────
+// Uses a direct fetch (not api()) because we need the HTTP status, not just
+// the JSON body: 401 must redirect to login, other errors render inline.
+function showPwMsg(text, isErr) {
+  const msg = document.getElementById('pw-msg');
+  msg.textContent = text;
+  msg.style.display = 'block';
+  msg.style.color = isErr ? 'var(--red)' : 'var(--accent)';
+}
+
+async function doChangePassword() {
+  const cur = document.getElementById('pw-current').value;
+  const nw = document.getElementById('pw-new').value;
+  const conf = document.getElementById('pw-confirm').value;
+  const btn = document.getElementById('btn-chpw');
+  document.getElementById('pw-msg').style.display = 'none';
+  if (nw !== conf) { showPwMsg('New passwords do not match.', true); return; }
+  btn.textContent = 'Updating…'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/password', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({current_password: cur, new_password: nw}),
+    });
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showPwMsg(d.error || 'Password change failed.', true);
+    } else {
+      showPwMsg('✓ Password updated. Other sessions were signed out.', false);
+      document.getElementById('pw-current').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-confirm').value = '';
+    }
+  } catch(_) {
+    showPwMsg('Network error — try again.', true);
+  }
+  btn.textContent = 'Update password'; btn.disabled = false;
 }
 
 loadTunnels();

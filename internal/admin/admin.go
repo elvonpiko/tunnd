@@ -73,13 +73,20 @@ func (h *Handler) isBootstrap() bool {
 	return stored == ""
 }
 
-// password returns the effective admin password (cfg > DB).
-func (h *Handler) password() string {
+// verifyAdminPassword checks a login attempt against the effective password.
+// When a config/env password (admin_password) is set, it wins — it's the
+// legacy operator-controlled path and is compared in constant time. Otherwise
+// the stored secret is used, which is a bcrypt hash (or a legacy plaintext
+// value, see verifyPassword).
+func (h *Handler) verifyAdminPassword(given string) bool {
 	if h.cfgPassword != "" {
-		return h.cfgPassword
+		want := []byte(h.cfgPassword)
+		got := []byte(given)
+		return len(got) == len(want) && subtle.ConstantTimeCompare(got, want) == 1
 	}
 	stored, _ := h.db.GetSetting(settingAdminPass)
-	return stored
+	ok, _ := verifyPassword(stored, given)
+	return ok
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +119,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.Handle("GET /api/tokens", h.securityHeaders(h.guard(h.listTokens)))
 	h.mux.Handle("POST /api/tokens", h.securityHeaders(h.guard(h.createToken)))
 	h.mux.Handle("DELETE /api/tokens/{id}", h.securityHeaders(h.guard(h.revokeToken)))
+	h.mux.Handle("POST /api/password", h.securityHeaders(h.guard(h.changePassword)))
 
 	// Protected dashboard catch-all
 	h.mux.Handle("/", h.securityHeaders(h.guard(h.serveUI)))
@@ -246,11 +254,21 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pass := r.FormValue("password")
-	if len(pass) < 12 {
+	if len(pass) < minPasswordLen {
 		http.Redirect(w, r, "/setup?error=Password+must+be+at+least+12+characters", http.StatusSeeOther)
 		return
 	}
-	if err := h.db.SetSetting(settingAdminPass, pass); err != nil {
+	if len(pass) > maxPasswordLen {
+		http.Redirect(w, r, "/setup?error=Password+must+be+at+most+72+bytes", http.StatusSeeOther)
+		return
+	}
+	// Store only the bcrypt hash — the plaintext never touches the DB.
+	hash, err := hashPassword(pass)
+	if err != nil {
+		http.Redirect(w, r, "/setup?error=Internal+error+saving+password", http.StatusSeeOther)
+		return
+	}
+	if err := h.db.SetSetting(settingAdminPass, hash); err != nil {
 		http.Redirect(w, r, "/setup?error=Internal+error+saving+password", http.StatusSeeOther)
 		return
 	}
@@ -289,11 +307,8 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pass := r.FormValue("password")
-	want := []byte(h.password())
-	got := []byte(pass)
 
-	ok := len(got) == len(want) && subtle.ConstantTimeCompare(got, want) == 1
-	if !ok {
+	if !h.verifyAdminPassword(pass) {
 		sourceIP := r.RemoteAddr
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
 			sourceIP = forwarded
@@ -305,6 +320,21 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Msg("admin login failure")
 		http.Redirect(w, r, "/login?error=Invalid+password", http.StatusSeeOther)
 		return
+	}
+
+	// Successful login against a legacy plaintext password: upgrade it to
+	// bcrypt in place. One-time, transparent, no operator action needed.
+	if h.cfgPassword == "" {
+		stored, _ := h.db.GetSetting(settingAdminPass)
+		if ok, needsRehash := verifyPassword(stored, pass); ok && needsRehash {
+			if hash, err := hashPassword(pass); err == nil {
+				if err := h.db.SetSetting(settingAdminPass, hash); err == nil {
+					log.Info().Msg("admin password upgraded to bcrypt on login")
+				} else {
+					log.Error().Err(err).Msg("upgrading admin password to bcrypt")
+				}
+			}
+		}
 	}
 
 	tok, err := h.newSession()
@@ -329,6 +359,81 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// ── Change password ───────────────────────────────────────────────────────────
+
+// changePassword implements POST /api/password: {current_password, new_password}.
+// On success every other admin session is invalidated (the current one
+// survives so the operator isn't logged out mid-form).
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		apiErr(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.CurrentPassword == "" || body.NewPassword == "" {
+		apiErr(w, "both current_password and new_password are required", http.StatusBadRequest)
+		return
+	}
+
+	// When the operator authenticates via config/env, the DB password is
+	// never consulted — changing it would silently do nothing. Refuse with
+	// guidance instead of pretending.
+	if h.cfgPassword != "" {
+		apiErr(w, "the admin password is set via admin_password in config/env — change it there (or remove it to use this flow)", http.StatusConflict)
+		return
+	}
+
+	if !h.verifyAdminPassword(body.CurrentPassword) {
+		log.Warn().Str("source_ip", r.RemoteAddr).Msg("password change rejected: wrong current password")
+		apiErr(w, "current password is incorrect", http.StatusForbidden)
+		return
+	}
+	if len(body.NewPassword) < minPasswordLen {
+		apiErr(w, fmt.Sprintf("new password must be at least %d characters", minPasswordLen), http.StatusBadRequest)
+		return
+	}
+	if len(body.NewPassword) > maxPasswordLen {
+		apiErr(w, fmt.Sprintf("new password must be at most %d bytes", maxPasswordLen), http.StatusBadRequest)
+		return
+	}
+
+	hash, err := hashPassword(body.NewPassword)
+	if err != nil {
+		apiErr(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.db.SetSetting(settingAdminPass, hash); err != nil {
+		apiErr(w, "saving new password: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Kill every other session — a password change means any other logged-in
+	// browser (possibly an attacker with the OLD password) must re-authenticate.
+	h.invalidateSessionsExcept(r)
+
+	log.Info().Msg("admin password changed")
+	apiOK(w, map[string]any{"changed": true})
+}
+
+// invalidateSessionsExcept deletes every admin session except the one making
+// the current request (identified by its session cookie).
+func (h *Handler) invalidateSessionsExcept(r *http.Request) {
+	current := ""
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		current = cookie.Value
+	}
+	h.sessMu.Lock()
+	for tok := range h.sessions {
+		if tok != current {
+			delete(h.sessions, tok)
+		}
+	}
+	h.sessMu.Unlock()
 }
 
 // setSessionCookie writes the admin session cookie. The Secure flag is set

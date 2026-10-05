@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/quick"
@@ -702,5 +703,227 @@ func TestIntegration_AuthFailureLogged(t *testing.T) {
 
 	if !found {
 		t.Errorf("no log entry with source_ip found for login failure; log output:\n%s", output)
+	}
+}
+
+// ── Password hashing & change-password flow ─────────────────────────────────
+
+// loginCookie performs a form login and returns the session cookie (fatal if
+// login fails).
+func loginCookie(t *testing.T, h http.Handler, password string) *http.Cookie {
+	t.Helper()
+	lr := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("password="+password))
+	lr.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	lw := httptest.NewRecorder()
+	h.ServeHTTP(lw, lr)
+	for _, c := range lw.Result().Cookies() {
+		if c.Name == "tunnd_session" {
+			return c
+		}
+	}
+	t.Fatalf("login did not set a session cookie (status=%d)", lw.Code)
+	return nil
+}
+
+// setupFreshDB returns a handler with NO password configured anywhere —
+// i.e. bootstrap mode.
+func setupFreshDB(t *testing.T) (*admin.Handler, *store.DB) {
+	t.Helper()
+	dbCounter++
+	uri := fmt.Sprintf("file:testdb%d?mode=memory&cache=shared", dbCounter)
+	db, err := store.Open(uri)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	authSvc := auth.New(db)
+	registry := tunnel.New(db, "tunnel.test")
+	return admin.New(authSvc, registry, db, ""), db
+}
+
+func formReq(method, path, form string) *http.Request {
+	r := httptest.NewRequest(method, path, strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return r
+}
+
+func TestSetup_StoresBcryptHash_NotPlaintext(t *testing.T) {
+	h, db := setupFreshDB(t)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, formReq(http.MethodPost, "/setup", "password=averylongpassword123"))
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("setup status = %d, want 303; body: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := db.GetSetting("admin_password")
+	if err != nil || stored == "" {
+		t.Fatalf("admin_password not stored (err=%v)", err)
+	}
+	if !strings.HasPrefix(stored, "$2") {
+		t.Fatalf("stored password is not a bcrypt hash: %q", stored)
+	}
+	if stored == "averylongpassword123" {
+		t.Fatal("stored password is plaintext")
+	}
+
+	// The plaintext must still verify via login.
+	lw := httptest.NewRecorder()
+	h.ServeHTTP(lw, formReq(http.MethodPost, "/login", "password=averylongpassword123"))
+	if lw.Code != http.StatusSeeOther || lw.Header().Get("Location") != "/" {
+		t.Errorf("login after setup failed: status=%d location=%q", lw.Code, lw.Header().Get("Location"))
+	}
+}
+
+func TestSetup_RejectsTooLongPassword(t *testing.T) {
+	h, _ := setupFreshDB(t)
+	tooLong := strings.Repeat("x", 73)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, formReq(http.MethodPost, "/setup", "password="+tooLong))
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "error=") {
+		t.Errorf("73-byte password should be rejected: status=%d location=%q", w.Code, w.Header().Get("Location"))
+	}
+}
+
+func TestLogin_LegacyPlaintextUpgradedToBcrypt(t *testing.T) {
+	h, db := setupFreshDB(t)
+
+	// Simulate a password written by tunnd <= 0.2.1: plaintext in the DB.
+	if err := db.SetSetting("admin_password", "legacyplaintext12"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	// Login with the legacy password must succeed…
+	lw := httptest.NewRecorder()
+	h.ServeHTTP(lw, formReq(http.MethodPost, "/login", "password=legacyplaintext12"))
+	if lw.Code != http.StatusSeeOther || lw.Header().Get("Location") != "/" {
+		t.Fatalf("legacy login failed: status=%d", lw.Code)
+	}
+
+	// …and transparently upgrade the stored value to bcrypt.
+	stored, _ := db.GetSetting("admin_password")
+	if !strings.HasPrefix(stored, "$2") {
+		t.Fatalf("legacy plaintext was not upgraded on login, stored=%q", stored)
+	}
+
+	// The same password must still work against the upgraded hash.
+	lw2 := httptest.NewRecorder()
+	h.ServeHTTP(lw2, formReq(http.MethodPost, "/login", "password=legacyplaintext12"))
+	if lw2.Code != http.StatusSeeOther || lw2.Header().Get("Location") != "/" {
+		t.Errorf("login after upgrade failed: status=%d", lw2.Code)
+	}
+
+	// Wrong password must fail.
+	lw3 := httptest.NewRecorder()
+	h.ServeHTTP(lw3, formReq(http.MethodPost, "/login", "password=wrongwrongwrong"))
+	if lw3.Code == http.StatusSeeOther && lw3.Header().Get("Location") == "/" {
+		t.Error("wrong password must not log in")
+	}
+}
+
+func TestChangePassword_FullFlow(t *testing.T) {
+	h, db := setupFreshDB(t)
+
+	// Bootstrap with a known password.
+	sw := httptest.NewRecorder()
+	h.ServeHTTP(sw, formReq(http.MethodPost, "/setup", "password=originalpass123"))
+	if sw.Code != http.StatusSeeOther {
+		t.Fatalf("setup failed: %d", sw.Code)
+	}
+
+	// Unauthenticated call → 401.
+	w := req(t, h, "POST", "/api/password",
+		map[string]any{"current_password": "originalpass123", "new_password": "brandnewpass456"}, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated change-password: status=%d, want 401", w.Code)
+	}
+
+	doChange := func(cookie *http.Cookie, current, next string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/api/password",
+			strings.NewReader(`{"current_password":`+strconv.Quote(current)+`,"new_password":`+strconv.Quote(next)+`}`))
+		r.Header.Set("Content-Type", "application/json")
+		r.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+
+	sessionA := loginCookie(t, h, "originalpass123")
+	sessionB := loginCookie(t, h, "originalpass123")
+
+	// Wrong current password → 403.
+	if w := doChange(sessionA, "totally-wrong-pass", "brandnewpass456"); w.Code != http.StatusForbidden {
+		t.Errorf("wrong current password: status=%d, want 403", w.Code)
+	}
+	// Weak new password → 400.
+	if w := doChange(sessionA, "originalpass123", "short"); w.Code != http.StatusBadRequest {
+		t.Errorf("weak new password: status=%d, want 400", w.Code)
+	}
+	// Both must not have changed the stored hash.
+	stored, _ := db.GetSetting("admin_password")
+	if !strings.HasPrefix(stored, "$2") || stored == "brandnewpass456" {
+		t.Fatalf("failed attempts must not change the stored hash: %q", stored)
+	}
+
+	// Correct current + strong new → 200.
+	if w := doChange(sessionA, "originalpass123", "brandnewpass456"); w.Code != http.StatusOK {
+		t.Fatalf("valid change-password: status=%d, want 200; body=%s", w.Code, w.Body.String())
+	}
+
+	// The DB now holds a NEW bcrypt hash of the new password.
+	stored, _ = db.GetSetting("admin_password")
+	if !strings.HasPrefix(stored, "$2") {
+		t.Fatalf("stored value is not a bcrypt hash after change: %q", stored)
+	}
+
+	// Old password no longer logs in.
+	if lw := func() *httptest.ResponseRecorder {
+		lw := httptest.NewRecorder()
+		h.ServeHTTP(lw, formReq(http.MethodPost, "/login", "password=originalpass123"))
+		return lw
+	}(); lw.Code == http.StatusSeeOther && lw.Header().Get("Location") == "/" {
+		t.Error("old password must not log in after a change")
+	}
+	// New password does.
+	if lw := func() *httptest.ResponseRecorder {
+		lw := httptest.NewRecorder()
+		h.ServeHTTP(lw, formReq(http.MethodPost, "/login", "password=brandnewpass456"))
+		return lw
+	}(); lw.Code != http.StatusSeeOther || lw.Header().Get("Location") != "/" {
+		t.Errorf("new password login failed: status=%d", lw.Code)
+	}
+
+	// Session B (another browser) was invalidated by the change…
+	r := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	r.AddCookie(sessionB)
+	wb := httptest.NewRecorder()
+	h.ServeHTTP(wb, r)
+	if wb.Code != http.StatusUnauthorized {
+		t.Errorf("other session must be invalidated after password change: status=%d, want 401", wb.Code)
+	}
+	// …while session A (the one that made the request) survives.
+	r2 := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	r2.AddCookie(sessionA)
+	wa := httptest.NewRecorder()
+	h.ServeHTTP(wa, r2)
+	if wa.Code != http.StatusOK {
+		t.Errorf("current session must survive the password change: status=%d, want 200", wa.Code)
+	}
+}
+
+func TestChangePassword_RefusedWhenConfigPassword(t *testing.T) {
+	// When the operator sets admin_password via config/env, the DB flow is
+	// not authoritative — changing it would silently do nothing.
+	h, _ := setup(t, "config-secret-123456")
+	cookie := loginCookie(t, h, "config-secret-123456")
+
+	r := httptest.NewRequest(http.MethodPost, "/api/password",
+		strings.NewReader(`{"current_password":"config-secret-123456","new_password":"brandnewpass456"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409 when admin_password is config-controlled", w.Code)
 	}
 }
