@@ -175,8 +175,9 @@ cat >> "${CONFIG_DIR}/tunnd-server.yaml" << YAML
 db_path: "${DATA_DIR}/tunnd.db"
 
 # ── Admin dashboard ───────────────────────────────────────────────────────────
-# Access at http://<server-ip>:9091
-# Username: admin   Password: see below
+# Access the dashboard over HTTPS on the base domain: https://${DOMAIN}
+# (password: see below). The admin port 9091 binds to 127.0.0.1 — reachable
+# via SSH tunnel (ssh -L 9091:localhost:9091) or by setting admin_bind.
 admin_password: "${ADMIN_PASSWORD}"
 
 # ── Limits ────────────────────────────────────────────────────────────────────
@@ -202,8 +203,11 @@ if command -v ufw &>/dev/null; then
   info "Configuring firewall rules (ufw)…"
   ufw allow 80/tcp   comment "Tunnd ACME challenge" 2>/dev/null || true
   ufw allow 443/tcp  comment "Tunnd tunnel traffic"  2>/dev/null || true
-  ufw allow 9091/tcp comment "Tunnd admin (restrict to trusted IPs in production)" 2>/dev/null || true
   ufw allow 20000:20100/tcp comment "Tunnd TCP tunnels" 2>/dev/null || true
+  # The admin dashboard is served on https://${DOMAIN} (port 443) and on the
+  # loopback-bound admin port — no public 9091 rule by default. If you need
+  # LAN access to http://<server-ip>:9091, set admin_bind: 0.0.0.0 and allow
+  # it here yourself, restricted to trusted IPs.
   success "Firewall rules added"
 fi
 
@@ -272,8 +276,9 @@ echo -e "${GREEN}${BOLD}  ✔  Tunnd is running!${RESET}"
 echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 echo -e "  ${BOLD}Server URL:${RESET}     https://${DOMAIN}"
-echo -e "  ${BOLD}Admin panel:${RESET}    http://$(curl -fsSL ifconfig.me 2>/dev/null || echo '<server-ip>'):9091"
+echo -e "  ${BOLD}Admin panel:${RESET}    https://${DOMAIN}"
 echo -e "  ${BOLD}Admin password:${RESET} ${ADMIN_PASSWORD}"
+echo -e "  ${BOLD}Admin port (LAN):${RESET} loopback only — ssh -L 9091:localhost:9091 to reach http://localhost:9091"
 echo
 if [[ -n "$FIRST_TOKEN" ]]; then
   echo -e "  ${BOLD}First token:${RESET}    ${CYAN}${FIRST_TOKEN}${RESET}"

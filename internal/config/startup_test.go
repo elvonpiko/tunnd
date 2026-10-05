@@ -273,3 +273,29 @@ admin_password: supersecretpassword`
 		t.Errorf("error should mention 'domain', got: %v", err)
 	}
 }
+
+// TestStartup_AdminBindDefaultsToLoopback: with no admin_bind configured,
+// the dashboard binds to 127.0.0.1 — the security posture that keeps the
+// un-TLS'd admin port off the public internet by default.
+func TestStartup_AdminBindDefaultsToLoopback(t *testing.T) {
+	t.Setenv("TUNND_DOMAIN", "tunnel.test")
+	t.Setenv("TUNND_HTTP_PORT", "8080")
+
+	cfg, err := config.LoadServer("")
+	if err != nil {
+		t.Fatalf("LoadServer: %v", err)
+	}
+	if cfg.AdminBind != "127.0.0.1" {
+		t.Errorf("AdminBind = %q, want default 127.0.0.1", cfg.AdminBind)
+	}
+
+	// Explicit override wins — the Docker setups rely on this.
+	t.Setenv("TUNND_ADMIN_BIND", "0.0.0.0")
+	cfg, err = config.LoadServer("")
+	if err != nil {
+		t.Fatalf("LoadServer with override: %v", err)
+	}
+	if cfg.AdminBind != "0.0.0.0" {
+		t.Errorf("AdminBind = %q, want 0.0.0.0 from env override", cfg.AdminBind)
+	}
+}

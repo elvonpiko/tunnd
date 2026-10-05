@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/elvonpiko/tunnd/internal/auth"
+	"github.com/elvonpiko/tunnd/internal/ratelimit"
 	"github.com/elvonpiko/tunnd/internal/store"
 	"github.com/elvonpiko/tunnd/internal/tunnel"
 )
@@ -27,6 +29,12 @@ const (
 	sessionCookieName = "tunnd_session"
 	sessionTTL        = 12 * time.Hour
 	settingAdminPass  = "admin_password"
+
+	// Login brute-force budget: 5 failed attempts per IP per 15 minutes.
+	// Successful logins never count (they reset the key), so honest use of
+	// a single-operator dashboard never trips this.
+	loginRateWindow = 15 * time.Minute
+	loginRateMax    = 5
 )
 
 // session holds a single authenticated admin session.
@@ -44,6 +52,10 @@ type Handler struct {
 	cfgPassword string
 	mux         *http.ServeMux
 
+	// loginLimiter throttles failed admin logins per source IP, making
+	// online brute force impractical against an exposed dashboard.
+	loginLimiter *ratelimit.Limiter
+
 	sessMu   sync.Mutex
 	sessions map[string]*session
 }
@@ -52,12 +64,13 @@ type Handler struct {
 // cfgPassword may be empty — in that case the password is read from (and written to) the DB.
 func New(authSvc *auth.Service, registry *tunnel.Registry, db *store.DB, cfgPassword string) *Handler {
 	h := &Handler{
-		auth:        authSvc,
-		registry:    registry,
-		db:          db,
-		cfgPassword: cfgPassword,
-		mux:         http.NewServeMux(),
-		sessions:    make(map[string]*session),
+		auth:         authSvc,
+		registry:     registry,
+		db:           db,
+		cfgPassword:  cfgPassword,
+		mux:          http.NewServeMux(),
+		loginLimiter: ratelimit.New(loginRateWindow, loginRateMax),
+		sessions:     make(map[string]*session),
 	}
 	h.registerRoutes()
 	go h.reapSessions()
@@ -308,7 +321,20 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	pass := r.FormValue("password")
 
+	// Brute-force throttle, keyed on the TCP peer address — NOT the
+	// client-supplied X-Forwarded-For, which an attacker could rotate to
+	// get a fresh budget per request. Behind a reverse proxy every
+	// dashboard user shares one budget, which is the right default for a
+	// single-operator tool.
+	ipKey := peerIP(r)
+	if !h.loginLimiter.Allow(ipKey) {
+		w.Header().Set("Retry-After", "900")
+		http.Redirect(w, r, "/login?error=Too+many+failed+attempts.+Try+again+in+a+few+minutes.", http.StatusTooManyRequests)
+		return
+	}
+
 	if !h.verifyAdminPassword(pass) {
+		h.loginLimiter.Strike(ipKey)
 		sourceIP := r.RemoteAddr
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
 			sourceIP = forwarded
@@ -321,6 +347,8 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=Invalid+password", http.StatusSeeOther)
 		return
 	}
+	// Success: this IP has proven itself — clear any accumulated strikes.
+	h.loginLimiter.Reset(ipKey)
 
 	// Successful login against a legacy plaintext password: upgrade it to
 	// bcrypt in place. One-time, transparent, no operator action needed.
@@ -651,4 +679,15 @@ func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, `"`, "&#34;")
 	s = strings.ReplaceAll(s, "'", "&#39;")
 	return s
+}
+
+// peerIP extracts the host portion of the TCP peer address. Deliberately
+// ignores X-Forwarded-For and friends: those are attacker-controllable on a
+// directly exposed listener, and rate-limit buckets must not be.
+func peerIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

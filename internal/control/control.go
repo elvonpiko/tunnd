@@ -5,6 +5,7 @@ package control
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/elvonpiko/tunnd/internal/auth"
+	"github.com/elvonpiko/tunnd/internal/ratelimit"
 	"github.com/elvonpiko/tunnd/internal/tunnel"
 	"github.com/elvonpiko/tunnd/pkg/proto"
 )
@@ -21,6 +23,12 @@ const (
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 4 * 1024 * 1024 // 4 MiB per frame
+
+	// Handshake failure budget: 10 failed registrations per IP per minute.
+	// Legitimate clients never hit this (a successful register resets the
+	// key); token-guessing spam gets a plain 429 without even a WS upgrade.
+	registerRateWindow = time.Minute
+	registerRateMax    = 10
 )
 
 var upgrader = websocket.Upgrader{
@@ -31,18 +39,34 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles WebSocket upgrades on the control plane.
 type Handler struct {
-	auth     *auth.Service
-	registry *tunnel.Registry
-	domain   string
+	auth             *auth.Service
+	registry         *tunnel.Registry
+	domain           string
+	registerLimiter  *ratelimit.Limiter
 }
 
 // New returns a new control-plane Handler.
 func New(authSvc *auth.Service, registry *tunnel.Registry, domain string) *Handler {
-	return &Handler{auth: authSvc, registry: registry, domain: domain}
+	return &Handler{
+		auth:            authSvc,
+		registry:        registry,
+		domain:          domain,
+		registerLimiter: ratelimit.New(registerRateWindow, registerRateMax),
+	}
 }
 
 // ServeHTTP upgrades the HTTP connection to a WebSocket and drives the session.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Handshake-failure throttle, keyed on the TCP peer address. Checked
+	// before the upgrade so over-budget sources get a cheap 429 instead of
+	// a WebSocket to spam auth attempts through.
+	ipKey := peerIP(r)
+	if !h.registerLimiter.Allow(ipKey) {
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "too many failed registration attempts — retry in a minute", http.StatusTooManyRequests)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("websocket upgrade failed")
@@ -52,6 +76,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := h.handshake(conn)
 	if err != nil {
+		h.registerLimiter.Strike(ipKey)
 		log.Warn().Err(err).Str("remote", r.RemoteAddr).Msg("handshake failed")
 		if ve, ok := err.(*tunnel.ValidationError); ok {
 			sendError(conn, ve.Code, ve.Message)
@@ -70,6 +95,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		conn.Close()
 		log.Info().Str("subdomain", sess.Subdomain).Msg("client disconnected")
 	}()
+
+	// A successful handshake clears this IP's failure budget — reconnect
+	// storms from healthy clients never accumulate toward the limit.
+	h.registerLimiter.Reset(ipKey)
 
 	log.Info().
 		Str("subdomain", sess.Subdomain).
@@ -262,4 +291,15 @@ func sendError(conn *websocket.Conn, code, message string) {
 	}
 	conn.SetWriteDeadline(time.Now().Add(writeWait))
 	conn.WriteMessage(websocket.BinaryMessage, msg) //nolint:errcheck
+}
+
+// peerIP extracts the host portion of the TCP peer address. Never trusts
+// forwarded headers: an attacker on a directly exposed control port must not
+// get a fresh rate-limit budget per fake X-Forwarded-For value.
+func peerIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

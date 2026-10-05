@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/quick"
 
@@ -419,6 +420,11 @@ func TestAuthLogging_SuccessNotLogged(t *testing.T) {
 func TestProperty14_AuthFailureLogging(t *testing.T) {
 	h, _ := setup(t, "thecorrectpassword")
 
+	// quick.Check fires up to MaxCount failed logins at one handler. Give
+	// each iteration a distinct source IP so the property exercises the
+	// failure-logging path — not the login rate limiter (5 failures per IP
+	// per 15 minutes), which refuses further attempts long before MaxCount.
+	var ipCounter atomic.Int64
 	f := func(password string) bool {
 		if password == "thecorrectpassword" {
 			return true
@@ -434,9 +440,11 @@ func TestProperty14_AuthFailureLogging(t *testing.T) {
 			zerolog.SetGlobalLevel(origLevel)
 		}()
 
+		n := int(ipCounter.Add(1))
 		loginBody := strings.NewReader("password=" + password)
 		lr := httptest.NewRequest(http.MethodPost, "/login", loginBody)
 		lr.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		lr.RemoteAddr = fmt.Sprintf("10.1.%d.%d:5555", n/256%256, n%256+1)
 		lw := httptest.NewRecorder()
 		h.ServeHTTP(lw, lr)
 
@@ -975,5 +983,46 @@ func TestRevokeToken_KillsActiveSessions(t *testing.T) {
 	}
 	if killed, _ := body["sessions_killed"].(float64); killed != 1 {
 		t.Errorf("sessions_killed = %v, want 1", body["sessions_killed"])
+	}
+}
+
+func TestLogin_RateLimitedAfterFailedAttempts(t *testing.T) {
+	h, _ := setupFreshDB(t)
+
+	// Bootstrap with a known password.
+	sw := httptest.NewRecorder()
+	h.ServeHTTP(sw, formReq(http.MethodPost, "/setup", "password=originalpass123"))
+	if sw.Code != http.StatusSeeOther {
+		t.Fatalf("setup failed: %d", sw.Code)
+	}
+
+	// Burn the failure budget: all httptest requests share one RemoteAddr,
+	// i.e. one rate-limit key.
+	for i := 0; i < 5; i++ {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, formReq(http.MethodPost, "/login", "password=definitely-wrong"))
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("failed login %d: status=%d, want 303", i, w.Code)
+		}
+	}
+
+	// The 6th attempt is refused — even with the CORRECT password.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, formReq(http.MethodPost, "/login", "password=originalpass123"))
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("over-budget login: status=%d, want 429", w.Code)
+	}
+	if ra := w.Header().Get("Retry-After"); ra == "" {
+		t.Error("429 response should carry a Retry-After header")
+	}
+
+	// Fresh key still logs in fine (the limit is per-IP, not global).
+	other := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("password=originalpass123"))
+	other.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	other.RemoteAddr = "10.0.0.9:5555"
+	ow := httptest.NewRecorder()
+	h.ServeHTTP(ow, other)
+	if ow.Code != http.StatusSeeOther || ow.Header().Get("Location") != "/" {
+		t.Errorf("other-IP login should succeed: status=%d location=%q", ow.Code, ow.Header().Get("Location"))
 	}
 }

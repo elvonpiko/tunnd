@@ -28,6 +28,15 @@ type Server struct {
 	// AdminPort is the port for the admin dashboard + API. Default 9091.
 	AdminPort int `mapstructure:"admin_port"`
 
+	// AdminBind is the interface the admin dashboard binds to.
+	// Default "127.0.0.1" — the dashboard is reachable over HTTPS on the
+	// public base domain (https://<domain>), via SSH tunnel, or on this
+	// loopback port; the loopback bind keeps a password-protected, un-TLS
+	// admin port off the public internet by default.
+	// Set "0.0.0.0" to restore the old behavior (e.g. with Docker port
+	// publishing acting as the access control).
+	AdminBind string `mapstructure:"admin_bind"`
+
 	// ── TLS: pick ONE of the three options below ──────────────────────────
 
 	// TLSEmail enables automatic Let's Encrypt certificates.
@@ -140,6 +149,7 @@ func LoadServer(cfgFile string) (*Server, error) {
 	// Defaults
 	v.SetDefault("http_port", 443)
 	v.SetDefault("admin_port", 9091)
+	v.SetDefault("admin_bind", "127.0.0.1")
 	v.SetDefault("db_path", "./tunnd.db")
 	v.SetDefault("acme_cache_dir", "./.autocert-cache")
 	v.SetDefault("log_level", "info")
@@ -153,6 +163,7 @@ func LoadServer(cfgFile string) (*Server, error) {
 		"domain":                "TUNND_DOMAIN",
 		"http_port":             "TUNND_HTTP_PORT",
 		"admin_port":            "TUNND_ADMIN_PORT",
+		"admin_bind":            "TUNND_ADMIN_BIND",
 		"tls_email":             "TUNND_TLS_EMAIL",
 		"acme_cache_dir":        "TUNND_ACME_CACHE_DIR",
 		"tls_cert_file":         "TUNND_TLS_CERT_FILE",
@@ -307,6 +318,11 @@ func (s *Server) Validate() error {
 	// sets it via the dashboard on first run. The server startup code is
 	// responsible for warning about weak / default values — Validate doesn't
 	// block startup on them.
+
+	// Admin bind interface: empty falls back to the secure loopback default.
+	if s.AdminBind == "" {
+		s.AdminBind = "127.0.0.1"
+	}
 
 	// Validate optional field: log_level — apply default if invalid.
 	switch s.LogLevel {

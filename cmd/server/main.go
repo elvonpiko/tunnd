@@ -71,7 +71,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 	setupLogging(cfg.LogLevel, cfg.LogFormat)
 
 	// Warn if a legacy admin_password is set via config/env — it still works
-	// but the preferred flow is the dashboard bootstrap on first run.
+	// but the preferred flow is the DB-stored bcrypt password managed from
+	// the dashboard (bootstrap on first run, change anytime in Settings).
 	if cfg.AdminPassword != "" {
 		weakDefaults := map[string]bool{"changeme": true, "admin": true, "changeme-please": true}
 		if weakDefaults[cfg.AdminPassword] {
@@ -79,6 +80,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 		} else if len(cfg.AdminPassword) < 12 {
 			log.Warn().Msg("Admin password is shorter than the recommended 12 characters.")
 		}
+		log.Info().Msg(
+			"admin_password is set via config/env (legacy). Consider removing it and using " +
+				"the dashboard flow instead — first-run bootstrap sets a bcrypt-hashed " +
+				"password that can be changed from Settings → Change admin password.",
+		)
 	}
 
 	log.Info().
@@ -103,12 +109,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 
 	// ── 10.3: Probe port availability ─────────────────────────────────────────
-	if err := probePort(cfg.HTTPPort); err != nil {
+	if err := probePort(fmt.Sprintf(":%d", cfg.HTTPPort)); err != nil {
 		return fmt.Errorf("cannot bind to HTTP port %d: %w", cfg.HTTPPort, err)
 	}
 	if cfg.HTTPPort != cfg.AdminPort {
-		if err := probePort(cfg.AdminPort); err != nil {
-			return fmt.Errorf("cannot bind to admin port %d: %w", cfg.AdminPort, err)
+		adminAddr := fmt.Sprintf("%s:%d", cfg.AdminBind, cfg.AdminPort)
+		if err := probePort(adminAddr); err != nil {
+			return fmt.Errorf("cannot bind admin listener %s: %w", adminAddr, err)
 		}
 	}
 
@@ -153,7 +160,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// The same handler is also exposed on the dedicated admin port for
 	// reverse-proxy and local-network access.
 	adminSrv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
+		Addr:         fmt.Sprintf("%s:%d", cfg.AdminBind, cfg.AdminPort),
 		Handler:      adminHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -479,10 +486,9 @@ func ensureDir(dir string) error {
 }
 
 // probePort attempts to open and immediately close a TCP listener on the given
-// port. If another process is already bound to the port, the error will
+// address. If another process is already bound to it, the error will
 // describe the conflict clearly (e.g. "address already in use").
-func probePort(port int) error {
-	addr := fmt.Sprintf(":%d", port)
+func probePort(addr string) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err

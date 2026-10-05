@@ -25,6 +25,9 @@ services:
       - TUNND_TLS_CERT_FILE=/etc/tunnd/certs/fullchain.pem
       - TUNND_TLS_KEY_FILE=/etc/tunnd/certs/privkey.pem
       - TUNND_DB_PATH=/data/tunnd.db
+      # Admin binds loopback by default; here Docker's published port
+      # mapping is the access control, so bind all interfaces.
+      - TUNND_ADMIN_BIND=0.0.0.0
       - TUNND_LOG_LEVEL=info
       - TUNND_LOG_FORMAT=json
     healthcheck:

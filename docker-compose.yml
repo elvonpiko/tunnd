@@ -29,6 +29,9 @@ services:
       - TUNND_TLS_EMAIL=${TUNND_TLS_EMAIL}
       - TUNND_DB_PATH=/data/tunnd.db
       - TUNND_ACME_CACHE_DIR=/data/.autocert-cache
+      # Admin binds loopback by default; here Docker's published port
+      # mapping is the access control, so bind all interfaces.
+      - TUNND_ADMIN_BIND=0.0.0.0
       - TUNND_LOG_LEVEL=info
       - TUNND_LOG_FORMAT=json
     healthcheck:
