@@ -7,7 +7,7 @@ Goreleaser also auto-generates a per-release changelog from commit messages
 on tag; this file captures hand-written notes for the changes that warrant
 extra context (breaking changes, migration notes, wire-protocol compatibility).
 
-## [Unreleased]
+## [0.3.0] - Pending
 
 Security hardening and reconnect reliability, focused on the server's failure modes: what happens when a client reconnects mid-session, when a device is revoked, when someone hammers the login page, and when a stream outlives a request timeout.
 
@@ -34,7 +34,7 @@ Security hardening and reconnect reliability, focused on the server's failure mo
 
 - New application close code **4429** (server → client): "this session was replaced or its token was revoked — do not reconnect." Clients older than this change treat it as an ordinary disconnect; same-token re-registration still works for them (takeover, not `subdomain_in_use`), which actually *fixes* their reconnect-after-blip behavior. The only degraded case is two old clients running the same token and subdomain simultaneously, where they now flap via takeover instead of one failing loudly — the updated client exits on 4429 instead.
 
-## [0.2.1] - Pending
+## [0.2.1] - Released
 
 Onboarding and reliability fixes that make the one-command VPS setup work exactly as documented, plus a convenience command for WebSocket apps.
 
