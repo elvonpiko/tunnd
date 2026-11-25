@@ -151,11 +151,15 @@ nav .wrap {
   color: var(--muted);
 }
 .term-body {
+  /* 17 lines, the full transcript. The frame stays this tall while the
+     animation fills it, instead of growing as each command lands. */
+  height: calc(17 * 1.75em);
   padding: 18px 20px;
   font-family: var(--mono);
   font-size: 13.5px;
   line-height: 1.75;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .term-line { display: block; white-space: pre }
 .term-prompt { color: var(--accent); margin-right: 8px }
@@ -615,12 +619,14 @@ for (const tab of document.querySelectorAll('.tab')) {
         body.appendChild(out);
         await sleep(80);
       }
-      const blank = document.createElement('span');
-      blank.className = 'term-line term-out';
-      blank.textContent = ' ';
-      body.appendChild(blank);
+      if (step !== script[script.length - 1]) {
+        const blank = document.createElement('span');
+        blank.className = 'term-line term-out';
+        blank.textContent = ' ';
+        body.appendChild(blank);
+      }
     }
-    body.appendChild(cursor());
+    body.lastElementChild.appendChild(cursor());
     await sleep(4000);
     run();
   }
