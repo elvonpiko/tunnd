@@ -151,11 +151,10 @@ nav .wrap {
   color: var(--muted);
 }
 .term-body {
-  /* A fixed window of 9 lines. New output scrolls inside it; the frame
-     does not grow, and lines are not clipped under the bottom edge.
-     content-box so the universal border-box rule does not eat the padding. */
+  /* Full 17-line transcript. content-box so padding is not subtracted
+     from that height. New lines still scroll into view inside the frame. */
   box-sizing: content-box;
-  height: calc(9 * 1.75em);
+  height: calc(17 * 1.75em);
   padding: 18px 20px;
   font-family: var(--mono);
   font-size: 13.5px;
