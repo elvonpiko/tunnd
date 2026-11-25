@@ -181,9 +181,11 @@ jobs:
 
       # Start the container with minimal test configuration.
       # TUNND_DOMAIN and TUNND_ADMIN_PASSWORD are required by the server to
-      # start. The admin port (9091) is mapped to the host so we can reach
-      # /healthz and /api/stats. TUNND_DB_PATH lands inside the writable
-      # /data volume so the unprivileged tunnd user can open it.
+      # start. The admin port binds to loopback by default, which the
+      # in-container /healthz probe can reach but a published host port
+      # cannot. This job's access control is the runner, so bind all
+      # interfaces inside the container. TUNND_DB_PATH lands inside the
+      # writable /data volume so the unprivileged tunnd user can open it.
       - name: Start test container
         run: |
           docker run -d \
@@ -192,6 +194,7 @@ jobs:
             -p 9091:9091 \
             -e TUNND_DOMAIN=test.example.com \
             -e TUNND_ADMIN_PASSWORD=testpassword12345 \
+            -e TUNND_ADMIN_BIND=0.0.0.0 \
             -e TUNND_HTTP_PORT=8080 \
             -e TUNND_DB_PATH=/data/tunnd.db \
             ${{ steps.image.outputs.ref }}
