@@ -65,7 +65,7 @@ tunnd ws 8080 --subdomain realtime
 ```
 
 ```
-  ▲  Tunnd
+  tunnd
 
   Forwarding    wss://icy-creek.tunnd.yourdomain.com → localhost:3000
   HTTP/HTTPS    https://icy-creek.tunnd.yourdomain.com (same port)

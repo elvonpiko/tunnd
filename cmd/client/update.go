@@ -249,7 +249,11 @@ func newerThan(candidate, current string) bool {
 			return false
 		}
 	}
-	return false
+	// Same numbers: v0.3.0 is newer than v0.3.0-rc1. Two pre-releases of
+	// the same triple are not ordered.
+	cPre := strings.Contains(strings.TrimPrefix(candidate, "v"), "-")
+	uPre := strings.Contains(strings.TrimPrefix(current, "v"), "-")
+	return uPre && !cPre
 }
 
 func splitSemver(s string) []int {

@@ -16,16 +16,16 @@
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0 }
 
 :root {
-  --bg: #0b0c0e;
-  --panel: #101214;
-  --border: #1e2226;
-  --border-strong: #2b3036;
-  --text: #e8eaed;
-  --sub: #9aa0a8;
-  --muted: #697077;
-  --accent: #57e6b4;
-  --accent-dim: rgba(87, 230, 180, .1);
-  --blue: #7ab8f5;
+  --bg: #10110f;
+  --panel: #171814;
+  --border: #2a2b26;
+  --border-strong: #3a3b34;
+  --text: #eceae3;
+  --sub: #b7b2a6;
+  --muted: #8a867c;
+  --accent: #e4d7b8;
+  --accent-dim: rgba(228, 215, 184, .12);
+  --blue: #d9d3c4;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -77,13 +77,13 @@ nav .wrap {
 .nav-right .cta {
   font-family: var(--mono);
   font-size: 13px;
-  color: #0b0c0e;
+  color: #1c1a16;
   background: var(--accent);
   padding: 6px 13px;
   border-radius: 6px;
   font-weight: 700;
 }
-.nav-right .cta:hover { color: #0b0c0e; opacity: .88 }
+.nav-right .cta:hover { color: #1c1a16; opacity: .88 }
 
 /* ── Hero ────────────────────────────────────────── */
 .hero { text-align: center; padding: 84px 0 72px }
@@ -114,8 +114,8 @@ nav .wrap {
   font-weight: 600;
   text-decoration: none;
 }
-.btn-primary { background: var(--accent); color: #0b0c0e }
-.btn-primary:hover { color: #0b0c0e; opacity: .88 }
+.btn-primary { background: var(--accent); color: #1c1a16 }
+.btn-primary:hover { color: #1c1a16; opacity: .88 }
 .btn-ghost {
   background: var(--panel);
   color: var(--text);
@@ -346,9 +346,9 @@ footer a:hover { color: var(--sub) }
 <nav>
   <div class="wrap">
     <a href="/tunnd/" class="brand">
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-        <rect width="22" height="22" rx="5" fill="#57e6b4"/>
-        <path d="M4.5 16.5L11 5L17.5 16.5" stroke="#0b0c0e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#e4d7b8"/>
+        <path d="M8 26V14.5C8 9.2 11.4 6 16 6C20.6 6 24 9.2 24 14.5V26" stroke="#1c1a16" stroke-width="2.4" stroke-linecap="round"/>
       </svg>
       tunnd
     </a>
@@ -382,21 +382,21 @@ footer a:hover { color: var(--sub) }
           <span class="term-title">~ tunnd</span>
         </div>
         <div class="term-body" id="termBody"><span class="term-line"><span class="term-prompt">$</span>tunnd setup</span>
-<span class="term-line term-out">  ▲  Tunnd setup</span>
+<span class="term-line term-out">  tunnd setup</span>
 <span class="term-line term-out">  Server  wss://tunnd.yourdomain.com  ✓</span>
 <span class="term-line term-out">  Token   tnnd_••••••••••••••  ✓</span>
 <span class="term-line term-out"> </span>
 <span class="term-line"><span class="term-prompt">$</span>tunnd http 3000</span>
-<span class="term-line term-out">  ▲  Tunnd</span>
+<span class="term-line term-out">  tunnd</span>
 <span class="term-line term-out">  <span class="term-arrow">→</span> <span class="term-url">https://brave-river-4tq7zm.tunnd.yourdomain.com</span> → localhost:3000</span>
 <span class="term-line term-out">     inspector  http://localhost:4040</span>
 <span class="term-line term-out"> </span>
 <span class="term-line"><span class="term-prompt">$</span>tunnd ws 3000</span>
-<span class="term-line term-out">  ▲  Tunnd</span>
+<span class="term-line term-out">  tunnd</span>
 <span class="term-line term-out">  <span class="term-arrow">→</span> <span class="term-url">wss://calm-meadow-x2j9fa.tunnd.yourdomain.com</span> → localhost:3000</span>
 <span class="term-line term-out"> </span>
 <span class="term-line"><span class="term-prompt">$</span>tunnd tcp 5432</span>
-<span class="term-line term-out">  ▲  Tunnd</span>
+<span class="term-line term-out">  tunnd</span>
 <span class="term-line term-out">  <span class="term-arrow">→</span> <span class="term-url">tcp://tunnd.yourdomain.com:20001</span> → localhost:5432</span></div>
       </div>
     </div>
@@ -555,21 +555,21 @@ for (const tab of document.querySelectorAll('.tab')) {
 
   const script = [
     { cmd: 'tunnd setup', out: [
-      '  ▲  Tunnd setup',
+      '  tunnd setup',
       '  Server  wss://tunnd.yourdomain.com  ✓',
       '  Token   tnnd_••••••••••••••  ✓',
     ]},
     { cmd: 'tunnd http 3000', out: [
-      '  ▲  Tunnd',
+      '  tunnd',
       ['  ', '→', '  ', 'https://brave-river-4tq7zm.tunnd.yourdomain.com', ' → localhost:3000'],
       '     inspector  http://localhost:4040',
     ]},
     { cmd: 'tunnd ws 3000', out: [
-      '  ▲  Tunnd',
+      '  tunnd',
       ['  ', '→', '  ', 'wss://calm-meadow-x2j9fa.tunnd.yourdomain.com', ' → localhost:3000'],
     ]},
     { cmd: 'tunnd tcp 5432', out: [
-      '  ▲  Tunnd',
+      '  tunnd',
       ['  ', '→', '  ', 'tcp://tunnd.yourdomain.com:20001', ' → localhost:5432'],
     ]},
   ];

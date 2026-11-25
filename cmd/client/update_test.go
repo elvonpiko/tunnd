@@ -21,6 +21,9 @@ func TestNewerThan(t *testing.T) {
 		// "dev" or unparseable: fall back to string compare.
 		{"dev", "dev", false},
 		{"v0.1.1-pre1", "v0.1.0", true}, // candidate parses, current parses
+		{"v0.3.0", "v0.3.0-rc1", true},
+		{"v0.3.0-rc1", "v0.3.0", false},
+		{"v0.3.0-rc2", "v0.3.0-rc1", false},
 	}
 	for _, c := range cases {
 		got := newerThan(c.candidate, c.current)

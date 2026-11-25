@@ -355,7 +355,7 @@ A custom subdomain is rejected with `invalid_subdomain` if any of these conditio
 
 ## Random Subdomains
 
-When no subdomain is requested (or `subdomain` is omitted from the `register` payload), the server generates a random subdomain using the pattern `{adjective}-{noun}-{suffix}`, where the suffix is 6 random base32 characters (`a-z`, `2-7`) from a cryptographic random source — ~2.8 × 10³⁸ possible suffixes, so guessing a random tunnel URL is impractical:
+When no subdomain is requested (or `subdomain` is omitted from the `register` payload), the server generates a random subdomain using the pattern `{adjective}-{noun}-{suffix}`, where the suffix is 6 random base32 characters (`a-z`, `2-7`) from a cryptographic random source. Six characters are 30 bits. With the word pair, that is about 4×10¹¹ names, so guessing a random tunnel URL is impractical:
 
 - `happy-river-4tq7zm`
 - `brave-mountain-x2j9fa`

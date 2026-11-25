@@ -68,7 +68,7 @@ tunnd setup
 ```
 
 ```
-  ▲  Tunnd Setup
+  tunnd setup
 
   Server address (e.g. wss://tunnd.example.com): wss://tunnd.yourdomain.com
   Checking server… ✓
@@ -93,7 +93,7 @@ tunnd http 3000
 ```
 
 ```
-  ▲  Tunnd
+  tunnd
 
   Forwarding    https://brave-river.tunnd.yourdomain.com → localhost:3000
   Inspector     http://localhost:4040

@@ -64,7 +64,7 @@ It asks for:
 Your settings are saved to `~/.config/tunnd/config.json`.
 
 ```
-  ▲  Tunnd Setup
+  tunnd setup
 
   Server address (e.g. wss://tunnd.example.com): wss://tunnd.yourdomain.com
   Checking server… ✓

@@ -157,7 +157,7 @@ func runSetup() error {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Println()
-	fmt.Println("  ▲  Tunnd Setup")
+	fmt.Println("  tunnd setup")
 	fmt.Println()
 
 	// Check for existing config
@@ -405,7 +405,7 @@ func statusCmd() *cobra.Command {
 				return err
 			}
 			fmt.Println()
-			fmt.Println("  ▲  Tunnd")
+			fmt.Println("  tunnd")
 			fmt.Println()
 			fmt.Printf("  Server:  %s\n", cfg.ServerAddr)
 			hint := cfg.Token
@@ -1317,7 +1317,7 @@ func parsePort(s string) (int, error) {
 
 func printBanner(publicURL string, localPort, inspectorPort int, protocol string, wsMode bool) {
 	fmt.Println()
-	fmt.Println("  ▲  Tunnd")
+	fmt.Println("  tunnd")
 	fmt.Println()
 	switch {
 	case protocol == "tcp":
@@ -1363,7 +1363,7 @@ const inspectorHTMLBody = `
 <body>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#09090b;--bg2:#111113;--bg3:#18181b;--border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);--text:#f4f4f5;--muted:#71717a;--muted2:#a1a1aa;--accent:#a78bfa;--green:#34d399;--red:#f87171;--amber:#fbbf24;--blue:#60a5fa;--mono:'Berkeley Mono','Fira Code',monospace}
+:root{--bg:#10110f;--bg2:#171814;--bg3:#20211c;--border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);--text:#eceae3;--muted:#8a867c;--muted2:#b7b2a6;--accent:#e4d7b8;--green:#9cba9a;--red:#e0a099;--amber:#d6c4a1;--blue:#d9d3c4;--mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
 body{font-family:var(--mono);background:var(--bg);color:var(--text);font-size:13px;min-height:100vh;-webkit-font-smoothing:antialiased}
 nav{padding:0 24px;height:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:rgba(9,9,11,.9);backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:var(--text)}
@@ -1398,7 +1398,7 @@ td.s-ok{color:var(--green)}td.s-err{color:var(--red)}td.s-redir{color:var(--ambe
 .new-row{animation:newrow .4s ease}@keyframes newrow{from{background:rgba(167,139,250,.08)}to{background:transparent}}
 </style>
 <nav>
-  <div class="logo"><div class="logo-mark"><svg viewBox="0 0 12 12" fill="none"><path d="M2 9L6 3L10 9" stroke="#09090b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>Tunnd Inspector</div>
+  <div class="logo"><div class="logo-mark"><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 10V5.4C2.5 3.4 4 2.2 6 2.2C8 2.2 9.5 3.4 9.5 5.4V10" stroke="#1c1a16" stroke-width="1.4" stroke-linecap="round"/></svg></div>tunnd</div>
   <div class="divider"></div>
   <span class="nav-url" id="nav-url"></span>
   <span class="nav-local" id="nav-local"></span>

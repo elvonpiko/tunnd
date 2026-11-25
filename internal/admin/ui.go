@@ -10,10 +10,10 @@ const setupHTML = `<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0b0c0e;--bg2:#111316;--bg3:#181b1f;
+  --bg:#10110f;--bg2:#171814;--bg3:#20211c;
   --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.18);
   --text:#e8e6e0;--muted:#6b6f78;--muted2:#9499a4;
-  --accent:#3dffc0;--red:#ff6b6b;--amber:#fbbf24;
+  --accent:#e4d7b8;--red:#ff6b6b;--amber:#fbbf24;
   --mono:'Berkeley Mono','Fira Code',monospace;
 }
 html,body{height:100%}
@@ -24,19 +24,19 @@ body{font-family:var(--mono);background:var(--bg);color:var(--text);font-size:13
 .logo-mark svg{width:16px;height:16px}
 .logo-text{font-size:17px;font-weight:700;color:var(--text)}
 .logo-sub{font-size:11px;color:var(--muted);margin-top:1px}
-.first-run{display:inline-flex;align-items:center;gap:6px;background:rgba(61,255,192,.08);border:1px solid rgba(61,255,192,.2);border-radius:100px;padding:3px 12px;font-size:11px;color:var(--accent);margin-bottom:18px;letter-spacing:.04em}
+.first-run{display:inline-flex;align-items:center;gap:6px;background:rgba(228,215,184,.12);border:1px solid rgba(228,215,184,.28);border-radius:100px;padding:3px 12px;font-size:11px;color:var(--accent);margin-bottom:18px;letter-spacing:.04em}
 h1{font-size:15px;font-weight:700;margin-bottom:6px}
 .sub{font-size:12px;color:var(--muted);margin-bottom:24px;line-height:1.6}
 .field{margin-bottom:16px}
 .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:7px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
 .field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:.15s;-webkit-appearance:none}
-.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(228,215,184,.12)}
 .field input::placeholder{color:var(--muted)}
 .hint{font-size:11px;color:var(--muted);margin-top:5px}
 .err{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.2);border-radius:7px;padding:10px 13px;color:var(--red);font-size:12px;margin-bottom:16px}
 .err:empty{display:none}
 .btn{width:100%;padding:11px;border-radius:8px;font-size:13px;font-weight:700;border:none;background:var(--accent);color:#0b0c0e;font-family:var(--mono);cursor:pointer;transition:.15s;letter-spacing:.02em}
-.btn:hover{background:#5fffcf}
+.btn:hover{background:#efe6d2}
 .btn:active{transform:scale(.98)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 </style>
@@ -46,7 +46,7 @@ h1{font-size:15px;font-weight:700;margin-bottom:6px}
   <div class="logo">
     <div class="logo-mark">
       <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 12L8 4L13 12" stroke="#0b0c0e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3.5 13.5V7.2C3.5 4.6 5.4 3 8 3C10.6 3 12.5 4.6 12.5 7.2V13.5" stroke="#1c1a16" stroke-width="1.7" stroke-linecap="round"/>
       </svg>
     </div>
     <div>
@@ -102,10 +102,10 @@ const loginHTML = `<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0b0c0e;--bg2:#111316;--bg3:#181b1f;
+  --bg:#10110f;--bg2:#171814;--bg3:#20211c;
   --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.18);
   --text:#e8e6e0;--muted:#6b6f78;--muted2:#9499a4;
-  --accent:#3dffc0;--red:#ff6b6b;
+  --accent:#e4d7b8;--red:#ff6b6b;
   --mono:'Berkeley Mono','Fira Code',monospace;
 }
 html,body{height:100%}
@@ -121,12 +121,12 @@ h1{font-size:15px;font-weight:700;margin-bottom:6px}
 .field{margin-bottom:18px}
 .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:7px;letter-spacing:.06em;text-transform:uppercase;font-weight:500}
 .field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:.15s;-webkit-appearance:none}
-.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(228,215,184,.12)}
 .field input::placeholder{color:var(--muted)}
 .err{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.2);border-radius:7px;padding:10px 13px;color:var(--red);font-size:12px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
 .err:empty{display:none}
 .btn{width:100%;padding:11px;border-radius:8px;font-size:13px;font-weight:700;border:none;background:var(--accent);color:#0b0c0e;font-family:var(--mono);cursor:pointer;transition:.15s;letter-spacing:.02em}
-.btn:hover{background:#5fffcf}
+.btn:hover{background:#efe6d2}
 .btn:active{transform:scale(.98)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .footer{margin-top:14px;text-align:center;font-size:11px;color:var(--muted)}
@@ -137,7 +137,7 @@ h1{font-size:15px;font-weight:700;margin-bottom:6px}
   <div class="logo">
     <div class="logo-mark">
       <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 12L8 4L13 12" stroke="#0b0c0e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3.5 13.5V7.2C3.5 4.6 5.4 3 8 3C10.6 3 12.5 4.6 12.5 7.2V13.5" stroke="#1c1a16" stroke-width="1.7" stroke-linecap="round"/>
       </svg>
     </div>
     <div>
@@ -181,10 +181,10 @@ const dashboardHTML = `<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0b0c0e;--bg2:#111316;--bg3:#181b1f;
+  --bg:#10110f;--bg2:#171814;--bg3:#20211c;
   --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
   --text:#e8e6e0;--muted:#6b6f78;--muted2:#9499a4;
-  --accent:#3dffc0;--red:#ff6b6b;--amber:#fbbf24;--blue:#60a5fa;
+  --accent:#e4d7b8;--red:#ff6b6b;--amber:#fbbf24;--blue:#60a5fa;
   --mono:'Berkeley Mono','Fira Code',monospace;
 }
 html,body{height:100%}
@@ -201,7 +201,7 @@ nav{display:flex;align-items:center;gap:0;padding:0 20px;height:52px;border-bott
 .nav-links{display:flex;gap:2px}
 .nav-link{padding:5px 13px;color:var(--muted2);border-radius:6px;font-size:13px;cursor:pointer;border:none;background:none;transition:.15s;white-space:nowrap}
 .nav-link:hover{color:var(--text);background:var(--bg3)}
-.nav-link.active{color:var(--accent);background:rgba(61,255,192,.07)}
+.nav-link.active{color:var(--accent);background:rgba(228,215,184,.10)}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0}
 .pill{font-size:12px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:100px;padding:3px 11px;white-space:nowrap}
 .pill b{color:var(--accent)}
@@ -222,7 +222,7 @@ nav{display:flex;align-items:center;gap:0;padding:0 20px;height:52px;border-bott
 .mobile-menu.open{display:flex}
 .mobile-menu-link{display:block;width:100%;padding:12px 14px;border-radius:8px;font-size:14px;font-family:var(--mono);color:var(--muted2);background:none;border:none;text-align:left;cursor:pointer;transition:.15s}
 .mobile-menu-link:hover{background:var(--bg3);color:var(--text)}
-.mobile-menu-link.active{color:var(--accent);background:rgba(61,255,192,.07)}
+.mobile-menu-link.active{color:var(--accent);background:rgba(228,215,184,.10)}
 .mobile-menu-divider{height:1px;background:var(--border);margin:6px 0}
 .mobile-menu-signout{display:block;width:100%;padding:12px 14px;border-radius:8px;font-size:14px;font-family:var(--mono);color:var(--red);background:none;border:none;text-align:left;cursor:pointer;transition:.15s}
 .mobile-menu-signout:hover{background:rgba(255,107,107,.08)}
@@ -265,7 +265,7 @@ td.mono{font-size:12px}
 .pg .pg-spacer{width:6px}
 .pg select{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:6px;outline:none;cursor:pointer;transition:.15s}
 .pg select:hover{border-color:var(--border2)}
-.pg select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.pg select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(228,215,184,.12)}
 .pg-btn{padding:5px 11px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted2);cursor:pointer;transition:.15s;font-family:var(--mono)}
 .pg-btn:hover:not(:disabled){border-color:var(--border2);color:var(--text)}
 .pg-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -274,19 +274,19 @@ td.mono{font-size:12px}
 .tb{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .tb-search{position:relative;flex:1;max-width:320px;min-width:200px}
 .tb-search input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px 7px 32px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:.15s}
-.tb-search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.tb-search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(228,215,184,.12)}
 .tb-search input::placeholder{color:var(--muted)}
 .tb-search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted);pointer-events:none}
 /* ── Badges ── */
 .badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap}
-.bg{background:rgba(61,255,192,.1);color:var(--accent)}
+.bg{background:rgba(228,215,184,.14);color:var(--accent)}
 .br{background:rgba(255,107,107,.1);color:var(--red)}
 .bb{background:rgba(96,165,250,.1);color:var(--blue)}
 .bm{background:rgba(148,153,164,.1);color:var(--muted2)}
 
 /* ── Buttons ── */
 .btn{padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;border:none;transition:.15s;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
-.btn-p{background:var(--accent);color:#0b0c0e}.btn-p:hover{background:#5fffcf}
+.btn-p{background:var(--accent);color:#0b0c0e}.btn-p:hover{background:#efe6d2}
 .btn-g{background:transparent;color:var(--muted2);border:1px solid var(--border)}.btn-g:hover{border-color:var(--border2);color:var(--text);background:var(--bg3)}
 .btn-d{background:rgba(255,107,107,.08);color:var(--red);border:1px solid rgba(255,107,107,.2)}.btn-d:hover{background:rgba(255,107,107,.16)}
 .btn-sm{padding:4px 10px;font-size:12px}
@@ -300,11 +300,11 @@ td.mono{font-size:12px}
 .field{margin-bottom:16px}
 .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:7px;letter-spacing:.05em;text-transform:uppercase}
 .field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;transition:.15s}
-.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(61,255,192,.08)}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(228,215,184,.12)}
 .ma{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 
 /* ── Token result box ── */
-.tok-box{background:var(--bg);border:1px solid rgba(61,255,192,.2);border-radius:9px;padding:14px 16px;margin:16px 0}
+.tok-box{background:var(--bg);border:1px solid rgba(228,215,184,.28);border-radius:9px;padding:14px 16px;margin:16px 0}
 .tok-label{font-size:11px;color:var(--muted);margin-bottom:6px}
 .tok-val{color:var(--accent);word-break:break-all;font-weight:700;font-size:12px;line-height:1.75;cursor:pointer;transition:.15s}
 .tok-val:hover{opacity:.8}
@@ -342,7 +342,7 @@ td.mono{font-size:12px}
   <a class="logo" href="/">
     <div class="logo-mark">
       <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 12L8 4L13 12" stroke="#0b0c0e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3.5 13.5V7.2C3.5 4.6 5.4 3 8 3C10.6 3 12.5 4.6 12.5 7.2V13.5" stroke="#1c1a16" stroke-width="1.7" stroke-linecap="round"/>
       </svg>
     </div>
     <span class="logo-text">Tunnd</span>

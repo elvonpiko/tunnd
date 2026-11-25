@@ -18,7 +18,7 @@
 ```
 $ tunnd http 3000
 
-  ▲  Tunnd
+  tunnd
 
   Forwarding    https://brave-river.tunnd.yourdomain.com → localhost:3000
   Inspector     http://localhost:4040
@@ -63,18 +63,17 @@ These are on the roadmap as community demand justifies them. PRs and feature req
 
 Tunnd auto-detects HTTPS dev servers (`vite --https`, `next dev --experimental-https`) and rewrites the Host header so frameworks like Vite, Next.js, and webpack-dev-server accept the request without `allowedHosts` config. Run `tunnd http <port>` and any local app works.
 
-### What's new in v0.2.0
+### On main, after v0.2.1
 
-Dev-server tunnels now just work — Vite, Next.js, webpack, Bun, Deno, and friends all expose cleanly via `tunnd http <port>` with no flags or framework configuration. Highlights:
+The [v0.2.1 release](https://github.com/elvonpiko/tunnd/releases/tag/v0.2.1) is what `install.sh` downloads. `main` is ahead of it:
 
-- **Host header rewrite by default** — dev servers stop returning "Blocked request" pages.
-- **Dual-stack dial** — fixes Windows IPv6-only listeners (`::1:5173` is the default for Vite on Windows).
-- **HTTPS dev server auto-detect** — `vite --https` works without any flag.
-- **Slow streaming responses** — SSE / long-poll / chunked survive past the old 120s cutoff.
-- **`X-Forwarded-*` headers** — populated on every tunneled request.
-- **Admin dashboard polish** — paginated history, sticky table headers, token search, 5-second auto-refresh.
-
-Wire protocol unchanged; old clients/servers continue to interoperate. See [the v0.2.0 release notes](https://github.com/elvonpiko/tunnd/releases/tag/v0.2.0) for the full list.
+- A reconnect replaces your own stale session instead of failing while that name is still held.
+- Revoking a token disconnects its live tunnels.
+- A dashboard password is stored as bcrypt. The first visit asks for the setup token printed in the server log.
+- The admin port binds to loopback. The dashboard is served on the base domain.
+- Generated names are a word pair plus 6 random base32 characters, about 4×10¹¹ names.
+- The local inspector shows the real method, path, and status.
+- Streamed responses flush as they arrive. A stalled response closes that stream instead of the whole tunnel.
 
 ---
 
@@ -114,7 +113,7 @@ tunnd http 3000    # public HTTPS URL pointing at localhost:3000
 ```
 
 ```
-  ▲  Tunnd
+  tunnd
 
   Forwarding    https://brave-river.tunnd.yourdomain.com → localhost:3000
   Inspector     http://localhost:4040
@@ -353,7 +352,7 @@ docs/
 
 - All tunnel traffic is TLS-encrypted (HTTPS / WSS)
 - Client auth uses 192-bit cryptographically random tokens (`tnnd_<48 hex>`); revoking a token immediately disconnects its active tunnels
-- Random tunnel subdomains are unguessable: word pair + 6 random base32 chars (~2.8 × 10³⁸ space)
+- Random tunnel subdomains are a word pair plus 6 random base32 characters, about 4×10¹¹ names
 - Admin passwords are stored as bcrypt hashes and changeable from the dashboard; other admin sessions are signed out on change
 - Brute force is throttled at both entry points: admin login (5 failures / IP / 15 min) and control-plane handshake (10 failures / IP / min)
 - The admin port binds to `127.0.0.1` by default — the dashboard is reachable over HTTPS on the base domain, or via SSH tunnel

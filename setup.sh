@@ -51,7 +51,7 @@ fi
 if [[ -z "$DOMAIN" || ( -z "$EMAIL" && -z "$TLS_CERT" ) ]]; then
   if [[ -e /dev/tty ]] && exec 3< /dev/tty 2>/dev/null; then
     echo
-    echo -e "${BOLD}⬆  Tunnd Server Setup${RESET}"
+    echo -e "${BOLD}tunnd server setup${RESET}"
     echo -e "   Press ${BOLD}Ctrl+C${RESET} at any prompt to cancel."
     echo
 
@@ -85,7 +85,7 @@ if [[ -n "$TLS_CERT" && -z "$TLS_KEY" ]]; then
 fi
 
 echo
-echo -e "${BOLD}⬆  Tunnd Server Setup${RESET}"
+echo -e "${BOLD}tunnd server setup${RESET}"
 echo -e "   Domain:  ${CYAN}${DOMAIN}${RESET}"
 if [[ -n "$EMAIL" ]]; then
   echo -e "   TLS:     Let's Encrypt (${EMAIL})"
