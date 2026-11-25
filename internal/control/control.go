@@ -156,7 +156,7 @@ func (h *Handler) handshake(conn *websocket.Conn) (*tunnel.Session, error) {
 		TunnelID:  sess.TunnelID,
 	})
 	if err != nil {
-		h.registry.Deregister(sess.Subdomain)
+		h.registry.DeregisterSession(sess)
 		return nil, err
 	}
 	sess.Send(msg)

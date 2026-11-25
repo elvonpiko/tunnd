@@ -185,11 +185,21 @@ func (r *Registry) httpPublicURL(subdomain string) string {
 		scheme = "https"
 	}
 	host := subdomain + "." + r.domain
-	port := r.publicPort
-	if port != 0 && !((scheme == "https" && port == 443) || (scheme == "http" && port == 80)) {
-		host = fmt.Sprintf("%s:%d", host, port)
+	if !defaultPublicPort(scheme, r.publicPort) {
+		host = fmt.Sprintf("%s:%d", host, r.publicPort)
 	}
 	return scheme + "://" + host
+}
+
+// defaultPublicPort reports whether port should be left off the public URL.
+func defaultPublicPort(scheme string, port int) bool {
+	if port == 0 {
+		return true
+	}
+	if scheme == "https" && port == 443 {
+		return true
+	}
+	return scheme == "http" && port == 80
 }
 
 // New returns an initialised Registry with the default reserved subdomain list.
