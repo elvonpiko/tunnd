@@ -151,15 +151,19 @@ nav .wrap {
   color: var(--muted);
 }
 .term-body {
-  /* 17 lines, the full transcript. The frame stays this tall while the
-     animation fills it, instead of growing as each command lands. */
-  height: calc(17 * 1.75em);
+  /* A fixed window of 9 lines. New output scrolls inside it; the frame
+     does not grow, and lines are not clipped under the bottom edge.
+     content-box so the universal border-box rule does not eat the padding. */
+  box-sizing: content-box;
+  height: calc(9 * 1.75em);
   padding: 18px 20px;
   font-family: var(--mono);
   font-size: 13.5px;
   line-height: 1.75;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .term-line { display: block; white-space: pre }
 .term-prompt { color: var(--accent); margin-right: 8px }
@@ -546,10 +550,13 @@ for (const tab of document.querySelectorAll('.tab')) {
 // The terminal is fully rendered in static HTML above; this only replaces
 // it with a typing animation, and only when the visitor is fine with motion.
 (function () {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
   const body = document.getElementById('termBody');
-  const STATIC = body.innerHTML;
+  const follow = () => { body.scrollTop = body.scrollHeight; };
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    follow();
+    return;
+  }
+
   const cursor = () => {
     const c = document.createElement('span');
     c.className = 'term-cursor';
@@ -591,6 +598,7 @@ for (const tab of document.querySelectorAll('.tab')) {
       body.appendChild(line);
       const c = cursor();
       line.appendChild(c);
+      follow();
       for (const ch of step.cmd) {
         cmd.textContent += ch;
         await sleep(40 + Math.random() * 40);
@@ -617,6 +625,7 @@ for (const tab of document.querySelectorAll('.tab')) {
           out.textContent = text;
         }
         body.appendChild(out);
+        follow();
         await sleep(80);
       }
       if (step !== script[script.length - 1]) {
@@ -624,9 +633,11 @@ for (const tab of document.querySelectorAll('.tab')) {
         blank.className = 'term-line term-out';
         blank.textContent = ' ';
         body.appendChild(blank);
+        follow();
       }
     }
     body.lastElementChild.appendChild(cursor());
+    follow();
     await sleep(4000);
     run();
   }
