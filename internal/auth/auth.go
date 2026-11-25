@@ -22,7 +22,7 @@ func New(db *store.DB) *Service {
 }
 
 // ValidateToken checks a token value and returns the token record if valid.
-// Returns nil, nil if the token does not exist or is disabled.
+// A missing, empty, or revoked token returns an error.
 func (s *Service) ValidateToken(value string) (*store.Token, error) {
 	if value == "" {
 		return nil, fmt.Errorf("empty token")

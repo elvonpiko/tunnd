@@ -54,13 +54,20 @@ type RequestLog struct {
 
 // Open opens (or creates) the SQLite database at path and runs migrations.
 func Open(path string) (*DB, error) {
-	// Build the DSN: append WAL and foreign-key pragmas using the correct
-	// separator ('?' for the first parameter, '&' if query params already exist).
+	// modernc.org/sqlite applies pragmas only through `_pragma=name(value)`.
+	// The mattn/go-sqlite3 names (`_journal_mode`, `_foreign_keys`) are ignored,
+	// which left every database in delete-journal mode with foreign keys off.
 	sep := "?"
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	dsn := path + sep + "_journal_mode=WAL&_foreign_keys=on"
+	pragmas := "_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
+	// WAL is not available on in-memory databases. File databases use it so
+	// the server and `tunnd-server token` can share the file.
+	if !strings.Contains(path, "mode=memory") && !strings.Contains(path, ":memory:") {
+		pragmas = "_pragma=journal_mode(WAL)&" + pragmas
+	}
+	dsn := path + sep + pragmas
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite: %w", err)
@@ -261,6 +268,20 @@ func (db *DB) queryTunnels(where string, args ...any) ([]*TunnelRecord, error) {
 }
 
 // ── Request log operations ────────────────────────────────────────────────────
+
+// PruneRequestLogs deletes inspector rows older than the given number of days.
+// The table is insert-only apart from this, so a long-running server would
+// otherwise grow it without bound.
+func (db *DB) PruneRequestLogs(days int) error {
+	if days < 1 {
+		days = 1
+	}
+	_, err := db.sql.Exec(
+		`DELETE FROM request_logs WHERE created_at < datetime('now', ?)`,
+		fmt.Sprintf("-%d days", days),
+	)
+	return err
+}
 
 // LogRequest inserts a request log entry.
 func (db *DB) LogRequest(r *RequestLog) error {

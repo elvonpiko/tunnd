@@ -39,10 +39,10 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles WebSocket upgrades on the control plane.
 type Handler struct {
-	auth             *auth.Service
-	registry         *tunnel.Registry
-	domain           string
-	registerLimiter  *ratelimit.Limiter
+	auth            *auth.Service
+	registry        *tunnel.Registry
+	domain          string
+	registerLimiter *ratelimit.Limiter
 }
 
 // New returns a new control-plane Handler.
@@ -145,16 +145,10 @@ func (h *Handler) handshake(conn *websocket.Conn) (*tunnel.Session, error) {
 		protocol = "http"
 	}
 
-	sess, err := h.registry.Register(tok.ID, reg.Subdomain, protocol, reg.LocalPort)
+	sess, err := h.registry.RegisterClient(tok.ID, reg.Subdomain, protocol, reg.LocalPort, reg.HostHeader)
 	if err != nil {
 		return nil, err
 	}
-
-	// Echo the client's host-header policy onto the session as-is. Empty
-	// string is preserved (Phase 2 treats it as the new default "rewrite"
-	// at apply-time, not at storage time). UpstreamScheme stays purely
-	// client-side — it does not need to be stored on the server session.
-	sess.HostHeader = reg.HostHeader
 
 	msg, err := proto.EncodeJSON(proto.MsgRegistered, proto.RegisteredPayload{
 		Subdomain: sess.Subdomain,

@@ -17,7 +17,7 @@ The path `/_tunnd/control` is reserved on the public port (default: 443). The cl
 | Property | Value |
 |---|---|
 | Protocol | WebSocket (RFC 6455) |
-| Message format | Binary frames containing JSON |
+| Message format | Binary WebSocket frames. First byte is `0x01` (JSON envelope) or `0x02` (raw stream bytes) |
 | Max frame size | 4 MiB |
 | Read buffer | 64 KiB |
 | Write buffer | 64 KiB |
@@ -29,7 +29,16 @@ The path `/_tunnd/control` is reserved on the public port (default: 443). The cl
 
 ## Message Format
 
-Every message is a **JSON envelope** with a `type` discriminator and an optional `payload`:
+Every WebSocket message is binary. The first byte selects the frame:
+
+| First byte | Rest of the frame |
+|---|---|
+| `0x01` | A JSON envelope |
+| `0x02` | 36 ASCII bytes of stream id, then raw bytes |
+
+Control messages (`register`, `registered`, `open`, `open_tcp`, `req_done`, `close`, `ping`, `pong`, `error`) use `0x01`. Proxied bytes use `0x02`. A JSON object whose `type` is `data` is not a data frame.
+
+A `0x01` frame is this envelope:
 
 ```json
 {
@@ -39,8 +48,6 @@ Every message is a **JSON envelope** with a `type` discriminator and an optional
 ```
 
 When there is no payload (e.g., `ping`, `pong`), the `payload` field is omitted.
-
-Messages are serialized to JSON and sent as binary WebSocket frames.
 
 ---
 

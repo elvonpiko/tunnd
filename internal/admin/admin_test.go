@@ -755,11 +755,28 @@ func formReq(method, path, form string) *http.Request {
 	return r
 }
 
+func TestSetup_RejectsOtherSite(t *testing.T) {
+	h, db := setupFreshDB(t)
+	r := formReq(http.MethodPost, "/setup", "setup_token="+h.SetupToken()+"&password=averylongpassword123")
+	r.Host = "tunnel.test"
+	r.Header.Set("Sec-Fetch-Site", "same-site")
+	r.Header.Set("Origin", "https://app.tunnel.test")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+	stored, _ := db.GetSetting("admin_password")
+	if stored != "" {
+		t.Fatal("cross-site setup stored a password")
+	}
+}
+
 func TestSetup_StoresBcryptHash_NotPlaintext(t *testing.T) {
 	h, db := setupFreshDB(t)
 
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, formReq(http.MethodPost, "/setup", "password=averylongpassword123"))
+	h.ServeHTTP(w, formReq(http.MethodPost, "/setup", "setup_token="+h.SetupToken()+"&password=averylongpassword123"))
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("setup status = %d, want 303; body: %s", w.Code, w.Body.String())
 	}
@@ -787,7 +804,7 @@ func TestSetup_RejectsTooLongPassword(t *testing.T) {
 	h, _ := setupFreshDB(t)
 	tooLong := strings.Repeat("x", 73)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, formReq(http.MethodPost, "/setup", "password="+tooLong))
+	h.ServeHTTP(w, formReq(http.MethodPost, "/setup", "setup_token="+h.SetupToken()+"&password="+tooLong))
 	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "error=") {
 		t.Errorf("73-byte password should be rejected: status=%d location=%q", w.Code, w.Header().Get("Location"))
 	}
@@ -834,7 +851,7 @@ func TestChangePassword_FullFlow(t *testing.T) {
 
 	// Bootstrap with a known password.
 	sw := httptest.NewRecorder()
-	h.ServeHTTP(sw, formReq(http.MethodPost, "/setup", "password=originalpass123"))
+	h.ServeHTTP(sw, formReq(http.MethodPost, "/setup", "setup_token="+h.SetupToken()+"&password=originalpass123"))
 	if sw.Code != http.StatusSeeOther {
 		t.Fatalf("setup failed: %d", sw.Code)
 	}
@@ -991,7 +1008,7 @@ func TestLogin_RateLimitedAfterFailedAttempts(t *testing.T) {
 
 	// Bootstrap with a known password.
 	sw := httptest.NewRecorder()
-	h.ServeHTTP(sw, formReq(http.MethodPost, "/setup", "password=originalpass123"))
+	h.ServeHTTP(sw, formReq(http.MethodPost, "/setup", "setup_token="+h.SetupToken()+"&password=originalpass123"))
 	if sw.Code != http.StatusSeeOther {
 		t.Fatalf("setup failed: %d", sw.Code)
 	}

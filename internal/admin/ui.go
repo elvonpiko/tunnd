@@ -60,6 +60,11 @@ h1{font-size:15px;font-weight:700;margin-bottom:6px}
   <div class="err" id="err-msg">%s</div>
   <form method="POST" action="/setup" onsubmit="onSubmit(event)">
     <div class="field">
+      <label>Setup token</label>
+      <input type="text" name="setup_token" autocomplete="off" spellcheck="false" required>
+      <div class="hint">Printed in the server log on first start, and written to setup.token next to the database.</div>
+    </div>
+    <div class="field">
       <label>Admin Password</label>
       <input type="password" name="password" id="pw" placeholder="••••••••••••" autocomplete="new-password" autofocus required minlength="12">
       <div class="hint">Minimum 12 characters. Store it somewhere safe.</div>

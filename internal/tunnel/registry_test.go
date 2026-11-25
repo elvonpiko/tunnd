@@ -213,6 +213,51 @@ func TestRegister_SameTokenTakesOverSubdomain(t *testing.T) {
 	}
 }
 
+func TestRegister_TakeoverSucceedsAtTunnelLimit(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+	r.SetMaxTunnelsPerToken(1)
+
+	if _, err := r.Register("tok1", "myapp", "http", 3000); err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	second, err := r.Register("tok1", "myapp", "http", 3000)
+	if err != nil {
+		t.Fatalf("same-token reconnect at limit 1: %v", err)
+	}
+	if got := r.Lookup("myapp"); got != second {
+		t.Fatal("lookup after takeover did not return the new session")
+	}
+	if _, err := r.Register("tok1", "other", "http", 3001); err == nil {
+		t.Fatal("expected tunnel_limit_reached for a second distinct tunnel")
+	}
+}
+
+func TestRegister_PublicURLUsesConfiguredEndpoint(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+	r.SetPublicEndpoint("http", 8080)
+	sess, err := r.Register("tok1", "myapp", "http", 3000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.PublicURL != "http://myapp.tunnel.test:8080" {
+		t.Fatalf("PublicURL = %q", sess.PublicURL)
+	}
+}
+
+func TestRegisterClient_StoresHostHeader(t *testing.T) {
+	db := openTestDB(t)
+	r := tunnel.New(db, "tunnel.test")
+	sess, err := r.RegisterClient("tok1", "myapp", "http", 3000, "preserve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.HostHeader != "preserve" {
+		t.Fatalf("HostHeader = %q", sess.HostHeader)
+	}
+}
+
 func TestRegister_DifferentTokenStillRejected(t *testing.T) {
 	db := openTestDB(t)
 	r := tunnel.New(db, "tunnel.test")

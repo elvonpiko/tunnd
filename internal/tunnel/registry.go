@@ -50,7 +50,18 @@ type Stream struct {
 
 	// Response pipe: client → server
 	respR *io.PipeReader // ServeHTTP reads the HTTP response from here
-	respW *io.PipeWriter // control-plane reader writes MsgData bytes here
+	respW *io.PipeWriter // writeResp copies queued chunks here
+
+	// respCh queues response chunks so the WebSocket reader never blocks on
+	// a slow browser. respMu guards respClosed. respStop is closed once
+	// when the stream is torn down; writeResp then drains respCh before
+	// closing the pipe, so a MsgClose cannot truncate a response that is
+	// still queued.
+	respMu     sync.Mutex
+	respClosed bool
+	respCh     chan []byte
+	respStop   chan struct{}
+	stopOnce   sync.Once
 }
 
 // Session represents one connected client and its registered tunnel.
@@ -68,10 +79,8 @@ type Session struct {
 	LocalPort int
 
 	// HostHeader is the host-header policy chosen by the client at register
-	// time. Stored as a faithful echo of what the client sent: "" (which
-	// Phase 2 will treat as the new default "rewrite"), "rewrite",
-	// "preserve", or a literal hostname (e.g. "myapp.local"). No behavior
-	// change in Phase 1 — this field is read by Phase 2's helpers.
+	// time: "" or "rewrite" (replace with localhost:<port>), "preserve", or
+	// a literal hostname. It is set before the session is published.
 	HostHeader string
 
 	// TCPListener is the public listener for TCP tunnels (nil for HTTP).
@@ -152,6 +161,35 @@ type Registry struct {
 	// auth token. 0 = unlimited. A per-token limit (Token.MaxTunnels) takes
 	// precedence when set; this value applies to tokens that don't set one.
 	maxTunnelsPerToken int
+
+	// publicScheme and publicPort build the URL handed to the client.
+	// Empty scheme means https. Port 0, 80, or 443 is omitted from the host.
+	publicScheme string
+	publicPort   int
+}
+
+// SetPublicEndpoint sets the scheme and port used in HTTP tunnel URLs.
+// scheme is "http" or "https". port is the port clients should dial; 80 and
+// 443 are omitted. Call it before any tunnel registers.
+func (r *Registry) SetPublicEndpoint(scheme string, port int) {
+	r.mu.Lock()
+	r.publicScheme = scheme
+	r.publicPort = port
+	r.mu.Unlock()
+}
+
+// httpPublicURL formats the public URL for an HTTP tunnel. Caller holds r.mu.
+func (r *Registry) httpPublicURL(subdomain string) string {
+	scheme := r.publicScheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	host := subdomain + "." + r.domain
+	port := r.publicPort
+	if port != 0 && !((scheme == "https" && port == 443) || (scheme == "http" && port == 80)) {
+		host = fmt.Sprintf("%s:%d", host, port)
+	}
+	return scheme + "://" + host
 }
 
 // New returns an initialised Registry with the default reserved subdomain list.
@@ -223,23 +261,20 @@ func (r *Registry) activeTunnelsForToken(tokenID string) int {
 // its WebSocket is closed (close code 4429) and the new registration proceeds.
 // This makes client reconnects after a network blip work without the old
 // session blocking the subdomain. A subdomain held by a DIFFERENT token is
-// still rejected with subdomain_in_use.
+// still rejected with subdomain_in_use. A same-token replacement does not
+// count against the concurrent-tunnel cap.
 func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) (*Session, error) {
-	r.mu.Lock()
+	return r.register(tokenID, subdomain, protocol, localPort, "")
+}
 
-	// Enforce the concurrent-tunnel cap. A token's own MaxTunnels (when > 0)
-	// overrides the server-wide default; 0 on both means unlimited.
-	limit := r.maxTunnelsPerToken
-	if tok, err := r.db.GetTokenByID(tokenID); err == nil && tok != nil && tok.MaxTunnels > 0 {
-		limit = tok.MaxTunnels
-	}
-	if limit > 0 && r.activeTunnelsForToken(tokenID) >= limit {
-		r.mu.Unlock()
-		return nil, &ValidationError{
-			Code:    "tunnel_limit_reached",
-			Message: fmt.Sprintf("token has reached its limit of %d concurrent tunnel(s)", limit),
-		}
-	}
+// RegisterClient is Register with the client's host-header policy applied
+// before the session is published.
+func (r *Registry) RegisterClient(tokenID, subdomain, protocol string, localPort int, hostHeader string) (*Session, error) {
+	return r.register(tokenID, subdomain, protocol, localPort, hostHeader)
+}
+
+func (r *Registry) register(tokenID, subdomain, protocol string, localPort int, hostHeader string) (*Session, error) {
+	r.mu.Lock()
 
 	if subdomain == "" {
 		// Generate a random subdomain and ensure it is not already taken.
@@ -262,7 +297,8 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 
 	// Conflict vs takeover: same token re-registering a subdomain is the
 	// normal reconnect path — replace the stale session. A different token
-	// holding the name is a real conflict.
+	// holding the name is a real conflict. The stale session stays in the
+	// map until the new row is persisted, so a failed insert cannot orphan it.
 	var stale *Session
 	if existing, exists := r.sessions[subdomain]; exists {
 		if existing.TokenID != tokenID {
@@ -272,8 +308,30 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 				Message: fmt.Sprintf("subdomain '%s' is already in use", subdomain),
 			}
 		}
-		delete(r.sessions, subdomain)
 		stale = existing
+	}
+
+	// Enforce the concurrent-tunnel cap. A token's own MaxTunnels (when > 0)
+	// overrides the server-wide default; 0 on both means unlimited. The
+	// session being replaced does not count — otherwise a one-tunnel token
+	// could never reconnect over itself.
+	limit := r.maxTunnelsPerToken
+	if tok, err := r.db.GetTokenByID(tokenID); err == nil && tok != nil && tok.MaxTunnels > 0 {
+		limit = tok.MaxTunnels
+	} else if err != nil {
+		r.mu.Unlock()
+		return nil, fmt.Errorf("reading token limit: %w", err)
+	}
+	inUse := r.activeTunnelsForToken(tokenID)
+	if stale != nil {
+		inUse--
+	}
+	if limit > 0 && inUse >= limit {
+		r.mu.Unlock()
+		return nil, &ValidationError{
+			Code:    "tunnel_limit_reached",
+			Message: fmt.Sprintf("token has reached its limit of %d concurrent tunnel(s)", limit),
+		}
 	}
 
 	tunnelID := uuid.New().String()
@@ -294,7 +352,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		tcpPort = port
 		publicURL = fmt.Sprintf("tcp://%s:%d", r.domain, tcpPort)
 	} else {
-		publicURL = fmt.Sprintf("https://%s.%s", subdomain, r.domain)
+		publicURL = r.httpPublicURL(subdomain)
 	}
 
 	sess := &Session{
@@ -305,6 +363,7 @@ func (r *Registry) Register(tokenID, subdomain, protocol string, localPort int) 
 		Protocol:    protocol,
 		PublicURL:   publicURL,
 		LocalPort:   localPort,
+		HostHeader:  hostHeader,
 		TCPListener: tcpListener,
 		TCPPort:     tcpPort,
 		send:        make(chan []byte, 512),
@@ -628,7 +687,8 @@ func (s *Session) Send(msg []byte) {
 	case s.send <- msg:
 	case <-s.kicked:
 	case <-timer.C:
-		log.Warn().Str("session", s.ID).Msg("send blocked >30s — dropping frame (slow client?)")
+		log.Warn().Str("session", s.ID).Msg("send blocked >30s — closing session instead of dropping a frame")
+		s.Kick("control plane stalled")
 	}
 }
 
@@ -641,13 +701,74 @@ func (s *Session) SendCh() <-chan []byte { return s.send }
 func newStream() *Stream {
 	reqR, reqW := io.Pipe()
 	respR, respW := io.Pipe()
-	return &Stream{
-		id:    uuid.New().String(),
-		reqR:  reqR,
-		reqW:  reqW,
-		respR: respR,
-		respW: respW,
+	st := &Stream{
+		id:       uuid.New().String(),
+		reqR:     reqR,
+		reqW:     reqW,
+		respR:    respR,
+		respW:    respW,
+		respCh:   make(chan []byte, 32),
+		respStop: make(chan struct{}),
 	}
+	go st.writeResp()
+	return st
+}
+
+// writeResp copies queued response chunks into the response pipe. It is the
+// only goroutine that writes respW, so chunk order matches the client.
+// On stop it drains chunks already queued, then closes the pipe.
+func (st *Stream) writeResp() {
+	defer st.respW.Close()
+	draining := false
+	for {
+		if draining {
+			select {
+			case chunk := <-st.respCh:
+				if _, err := st.respW.Write(chunk); err != nil {
+					return
+				}
+			default:
+				return
+			}
+			continue
+		}
+		select {
+		case chunk := <-st.respCh:
+			if _, err := st.respW.Write(chunk); err != nil {
+				return
+			}
+		case <-st.respStop:
+			draining = true
+		}
+	}
+}
+
+// enqueue copies a response chunk onto the stream queue. It reports false
+// when the stream is already stopping or the queue is full (the caller
+// should abandon the stream). A full queue does not block.
+func (st *Stream) enqueue(data []byte) bool {
+	buf := make([]byte, len(data))
+	copy(buf, data)
+	st.respMu.Lock()
+	defer st.respMu.Unlock()
+	if st.respClosed {
+		return false
+	}
+	select {
+	case st.respCh <- buf:
+		return true
+	default:
+		return false
+	}
+}
+
+func (st *Stream) stopResp() {
+	st.stopOnce.Do(func() {
+		st.respMu.Lock()
+		st.respClosed = true
+		st.respMu.Unlock()
+		close(st.respStop)
+	})
 }
 
 // openStream creates a stream, registers it, notifies the client, and starts
@@ -762,9 +883,11 @@ func (s *Session) WriteRespData(streamID string, data []byte) {
 	if !ok {
 		return
 	}
-	if _, err := st.respW.Write(data); err != nil {
-		log.Debug().Err(err).Str("stream", streamID).Msg("resp pipe write error")
+	if st.enqueue(data) {
+		return
 	}
+	log.Warn().Str("stream", streamID).Msg("response stalled — closing stream so the control connection stays alive")
+	s.CloseStream(streamID)
 }
 
 // CloseStream closes both pipes for a stream and removes it.
@@ -777,7 +900,9 @@ func (s *Session) CloseStream(streamID string) {
 	}
 	s.mu.Unlock()
 	if ok {
-		st.respW.Close() // unblocks ServeHTTP's http.ReadResponse
+		// stopResp lets writeResp drain queued chunks and close respW.
+		// Closing respW here would truncate that queue.
+		st.stopResp()
 		st.reqW.Close()
 	}
 }
@@ -880,7 +1005,7 @@ func (r *Registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 
-	written, _ := io.Copy(w, resp.Body)
+	written, _ := copyFlush(w, resp.Body)
 
 	// Log to DB for the admin inspector.
 	_ = r.db.LogRequest(&store.RequestLog{
@@ -900,6 +1025,37 @@ func (r *Registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		Int("status", resp.StatusCode).
 		Int64("ms", time.Since(start).Milliseconds()).
 		Msg("proxied request")
+}
+
+// copyFlush copies src to dst and flushes after every write when dst is an
+// http.Flusher. Without that, net/http holds small chunks (SSE events) until
+// the handler returns or an internal buffer fills.
+func copyFlush(dst io.Writer, src io.Reader) (int64, error) {
+	buf := make([]byte, 32*1024)
+	var written int64
+	fl, _ := dst.(http.Flusher)
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[:nr])
+			written += int64(nw)
+			if fl != nil {
+				fl.Flush()
+			}
+			if ew != nil {
+				return written, ew
+			}
+			if nw != nr {
+				return written, io.ErrShortWrite
+			}
+		}
+		if er != nil {
+			if er == io.EOF {
+				return written, nil
+			}
+			return written, er
+		}
+	}
 }
 
 // isUpgradeRequest reports whether req carries an HTTP/1.1 Upgrade — used for

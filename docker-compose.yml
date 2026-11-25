@@ -20,7 +20,7 @@ services:
     ports:
       - "80:80"       # ACME HTTP-01 challenge (Let's Encrypt)
       - "443:443"     # Public HTTPS tunnel traffic
-      - "9091:9091"   # Admin dashboard (firewall this in production)
+      - "127.0.0.1:9091:9091"   # Admin dashboard, loopback on the host only
       - "20000-20100:20000-20100"  # Public TCP tunnel ports (`tunnd tcp <port>`)
     volumes:
       - tunnd-data:/data

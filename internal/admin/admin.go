@@ -12,6 +12,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +61,12 @@ type Handler struct {
 
 	sessMu   sync.Mutex
 	sessions map[string]*session
+
+	// setupToken is required on POST /setup. It is printed at startup and
+	// written next to the database so a public visitor cannot claim a fresh
+	// server by getting to the bootstrap form first.
+	setupToken     string
+	setupTokenPath string
 }
 
 // New returns a configured admin Handler.
@@ -72,9 +81,36 @@ func New(authSvc *auth.Service, registry *tunnel.Registry, db *store.DB, cfgPass
 		loginLimiter: ratelimit.New(loginRateWindow, loginRateMax),
 		sessions:     make(map[string]*session),
 	}
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		panic("admin: reading setup token: " + err.Error())
+	}
+	h.setupToken = hex.EncodeToString(raw)
 	h.registerRoutes()
 	go h.reapSessions()
 	return h
+}
+
+// SetupToken returns the first-run token. The dashboard form does not
+// display it; the operator reads it from the server log or setup.token.
+func (h *Handler) SetupToken() string { return h.setupToken }
+
+// PublishSetupToken logs the bootstrap token and writes it beside the
+// database when no admin password is configured yet.
+func (h *Handler) PublishSetupToken(dbPath string) {
+	if !h.isBootstrap() || h.setupToken == "" {
+		return
+	}
+	log.Warn().Str("setup_token", h.setupToken).Msg("admin password is not set — enter this token on /setup")
+	if dbPath == "" {
+		return
+	}
+	path := filepath.Join(filepath.Dir(dbPath), "setup.token")
+	if err := os.WriteFile(path, []byte(h.setupToken+"\n"), 0o600); err != nil {
+		log.Error().Err(err).Str("path", path).Msg("writing setup token")
+		return
+	}
+	h.setupTokenPath = path
 }
 
 // isBootstrap returns true when no admin password has been configured yet.
@@ -217,6 +253,10 @@ func (h *Handler) guard(next http.HandlerFunc) http.Handler {
 			return
 		}
 
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && requestFromOtherSite(r) {
+			apiErr(w, "cross-site request blocked", http.StatusForbidden)
+			return
+		}
 		if !h.validateSession(r) {
 			sourceIP := r.RemoteAddr
 			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
@@ -262,8 +302,18 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	if requestFromOtherSite(r) {
+		http.Error(w, "cross-site request blocked", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/setup?error=bad+request", http.StatusSeeOther)
+		return
+	}
+	givenToken := r.FormValue("setup_token")
+	if len(givenToken) != len(h.setupToken) ||
+		subtle.ConstantTimeCompare([]byte(givenToken), []byte(h.setupToken)) != 1 {
+		http.Redirect(w, r, "/setup?error=Invalid+setup+token", http.StatusSeeOther)
 		return
 	}
 	pass := r.FormValue("password")
@@ -294,6 +344,10 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.setSessionCookie(w, r, tok)
+	if h.setupTokenPath != "" {
+		_ = os.Remove(h.setupTokenPath)
+		h.setupTokenPath = ""
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -315,6 +369,10 @@ func (h *Handler) serveLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if requestFromOtherSite(r) {
+		http.Error(w, "cross-site request blocked", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/login?error=bad+request", http.StatusSeeOther)
 		return
@@ -376,6 +434,10 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if requestFromOtherSite(r) {
+		http.Error(w, "cross-site request blocked", http.StatusForbidden)
+		return
+	}
 	h.deleteSession(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
@@ -684,6 +746,33 @@ func htmlEscape(s string) string {
 // peerIP extracts the host portion of the TCP peer address. Deliberately
 // ignores X-Forwarded-For and friends: those are attacker-controllable on a
 // directly exposed listener, and rate-limit buckets must not be.
+// requestFromOtherSite reports whether a browser on another site, including
+// a tunnel subdomain of this server, sent the request. Same-origin dashboard
+// calls and non-browser clients (no Origin, no Sec-Fetch-Site) are allowed.
+func requestFromOtherSite(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "cross-site", "same-site":
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return true
+	}
+	return !strings.EqualFold(hostOnly(u.Host), hostOnly(r.Host))
+}
+
+func hostOnly(hostport string) string {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return hostport
+	}
+	return host
+}
+
 func peerIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

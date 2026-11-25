@@ -9,7 +9,6 @@ package tunnel
 import (
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -62,44 +61,44 @@ func applyHostHeader(req *http.Request, sess *Session) {
 // setForwardedHeaders injects the standard X-Forwarded-* trio onto req
 // before it is serialised into the stream pipe.
 //
-//   - X-Forwarded-For: append the client IP (parsed from req.RemoteAddr)
-//     to any pre-existing chain per RFC 7239 conventions.
-//   - X-Forwarded-Proto: preserve any inbound value (Caddy may have set it).
-//     Otherwise default to "https" — production assumption, since Caddy
-//     fronts the tunnel server with TLS. The env var TUNND_DEV_MODE=1
-//     flips the default to "http" for local dev runs without a TLS front.
-//   - X-Forwarded-Host: set to originalHost (the public Host captured
-//     BEFORE applyHostHeader rewrites req.Host). If originalHost is empty,
-//     fall back to req.Host so the header is never blank.
+// Tunnd is often the edge, so a public peer does not get to choose these
+// headers: X-Forwarded-For is replaced with that peer, and X-Forwarded-Proto
+// comes from the connection tunnd accepted (https when req.TLS is set).
 //
-// Reading TUNND_DEV_MODE is the only side-effect; it's idempotent and
-// process-scoped so it doesn't compromise the helper's testability.
+// A loopback, link-local, or private peer is treated as a reverse proxy on
+// the same machine (Caddy in Docker, for example). In that case an inbound
+// X-Forwarded-For chain is kept and the peer is appended, and an inbound
+// X-Forwarded-Proto is kept.
+//
+// X-Forwarded-Host is always the original public Host captured before
+// applyHostHeader rewrites req.Host. An empty originalHost falls back to
+// req.Host so the header is never blank.
 func setForwardedHeaders(req *http.Request, originalHost string) {
 	if req == nil {
 		return
 	}
 
-	// X-Forwarded-For: parse client IP, then append to any existing chain.
 	clientIP := clientIPFromRemoteAddr(req.RemoteAddr)
 	if clientIP != "" {
-		if existing := req.Header.Get("X-Forwarded-For"); existing != "" {
-			req.Header.Set("X-Forwarded-For", existing+", "+clientIP)
+		proto := "http"
+		if req.TLS != nil {
+			proto = "https"
+		}
+		if peerIsTrustedProxy(clientIP) {
+			if existing := req.Header.Get("X-Forwarded-For"); existing != "" {
+				req.Header.Set("X-Forwarded-For", existing+", "+clientIP)
+			} else {
+				req.Header.Set("X-Forwarded-For", clientIP)
+			}
+			if req.Header.Get("X-Forwarded-Proto") == "" {
+				req.Header.Set("X-Forwarded-Proto", proto)
+			}
 		} else {
 			req.Header.Set("X-Forwarded-For", clientIP)
+			req.Header.Set("X-Forwarded-Proto", proto)
 		}
 	}
 
-	// X-Forwarded-Proto: preserve inbound (Caddy), else default by env.
-	if req.Header.Get("X-Forwarded-Proto") == "" {
-		proto := "https"
-		if os.Getenv("TUNND_DEV_MODE") == "1" {
-			proto = "http"
-		}
-		req.Header.Set("X-Forwarded-Proto", proto)
-	}
-
-	// X-Forwarded-Host: original public Host, falling back to req.Host
-	// so the header is always populated.
 	host := originalHost
 	if host == "" {
 		host = req.Host
@@ -107,6 +106,17 @@ func setForwardedHeaders(req *http.Request, originalHost string) {
 	if host != "" {
 		req.Header.Set("X-Forwarded-Host", host)
 	}
+}
+
+// peerIsTrustedProxy reports whether ip is a loopback, link-local, or
+// private address — the peers that sit in front of tunnd when a local
+// reverse proxy terminates TLS.
+func peerIsTrustedProxy(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast()
 }
 
 // clientIPFromRemoteAddr extracts the IP portion of a "host:port" remote

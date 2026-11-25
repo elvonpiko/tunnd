@@ -59,8 +59,8 @@ const (
 
 // RegisterPayload is sent by the client to request a tunnel.
 //
-// HostHeader and UpstreamScheme are additive, optional fields introduced for
-// the localhost-tunneling fixes (see .kiro/specs/localhost-tunneling-broken-fixes).
+// HostHeader and UpstreamScheme are additive, optional fields introduced so
+// dev servers accept tunneled requests without allowedHosts configuration.
 // Both use `omitempty` so older clients (which omit them) and older servers
 // (which ignore unknown fields) continue to interoperate. The wire framing,
 // MsgType set, and existing field names are unchanged.

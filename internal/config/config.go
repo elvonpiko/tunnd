@@ -59,9 +59,20 @@ type Server struct {
 	// DBPath is the SQLite database file path.
 	DBPath string `mapstructure:"db_path"`
 
-	// AdminPassword protects the admin dashboard with HTTP Basic Auth.
-	// Leave empty to disable auth (not recommended in production).
+	// AdminPassword protects the admin dashboard when set (legacy).
+	// Leave empty to use the first-run bootstrap page, which stores a bcrypt
+	// hash. While this is set it wins over the database password and the
+	// dashboard cannot change it.
 	AdminPassword string `mapstructure:"admin_password"`
+
+	// PublicScheme is the scheme advertised in tunnel URLs ("http" or "https").
+	// Empty follows the listener: https when tunnd terminates TLS, otherwise http.
+	// Set "https" when a reverse proxy terminates TLS in front of plain HTTP.
+	PublicScheme string `mapstructure:"public_scheme"`
+
+	// PublicPort is the port clients and browsers dial for HTTP tunnels.
+	// 0 uses HTTPPort. 80 and 443 are omitted from the URL.
+	PublicPort int `mapstructure:"public_port"`
 
 	// ReservedSubdomains is the list of subdomain names that clients cannot register.
 	// Defaults to ["www", "api", "admin", "mail", "ftp"] when not specified.
@@ -176,6 +187,8 @@ func LoadServer(cfgFile string) (*Server, error) {
 		"tcp_max_port":          "TUNND_TCP_MAX_PORT",
 		"log_level":             "TUNND_LOG_LEVEL",
 		"log_format":            "TUNND_LOG_FORMAT",
+		"public_scheme":         "TUNND_PUBLIC_SCHEME",
+		"public_port":           "TUNND_PUBLIC_PORT",
 	} {
 		v.BindEnv(key, env) //nolint:errcheck
 	}

@@ -106,22 +106,18 @@ Never run without TLS on a public server. Tunnel traffic and tokens would be sen
 When running behind Caddy (or any reverse proxy), TLS is terminated at the proxy. Set Tunnd to listen on internal ports without TLS:
 
 ```yaml
-http_port: 9095    # Caddy proxies public :443 → internal :9095
-admin_port: 9096
-# No tls_email, no tls_cert_file — Caddy handles TLS
+http_port: 8080          # Caddy proxies public :443 here
+public_scheme: "https"
+public_port: 443
+# No tls_email, no tls_cert_file — Caddy handles TLS.
+# The admin dashboard is served on the base domain of this same port.
 ```
 
-Caddy uses your wildcard certs:
+Caddy uses your wildcard certs. Send the base domain and the wildcard to the same port:
 ```caddy
-tunnd.yourdomain.com {
+*.tunnd.yourdomain.com, tunnd.yourdomain.com {
     tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
-    handle /_tunnd/control { reverse_proxy tunnd-server:9095 }
-    handle { reverse_proxy tunnd-server:9096 }
-}
-
-*.tunnd.yourdomain.com {
-    tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
-    reverse_proxy tunnd-server:9095
+    reverse_proxy tunnd-server:8080
 }
 ```
 

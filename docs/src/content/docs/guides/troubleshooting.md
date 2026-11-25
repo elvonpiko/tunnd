@@ -152,7 +152,7 @@ The dashboard is reachable two ways: over HTTPS on the base domain
 `admin_bind: "0.0.0.0"` for `http://<server-ip>:9091`.
 
 ```bash
-# Is the admin port listening? (loopback since v0.2.1)
+# Is the admin port listening? (loopback since v0.3.0)
 ss -tlnp | grep 9091
 
 # Test locally on the server

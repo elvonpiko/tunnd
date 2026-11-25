@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -135,12 +136,26 @@ func runServer(cmd *cobra.Command, args []string) error {
 	registry.SetTCPPortRange(cfg.TCPMinPort, cfg.TCPMaxPort)
 	registry.SetMaxTunnelsPerToken(cfg.MaxTunnelsPerToken)
 
-	tlsConfig, err := buildTLSConfig(cfg)
+	tlsConfig, acmeSrv, err := buildTLSConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("tls: %w", err)
 	}
+	scheme := cfg.PublicScheme
+	if scheme == "" {
+		if tlsConfig != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	port := cfg.PublicPort
+	if port == 0 {
+		port = cfg.HTTPPort
+	}
+	registry.SetPublicEndpoint(scheme, port)
 
 	adminHandler := admin.New(authSvc, registry, db, cfg.AdminPassword)
+	adminHandler.PublishSetupToken(cfg.DBPath)
 
 	// ── Public mux: tunnel traffic + WebSocket control plane + admin ─────────
 	// Requests to the bare base domain are routed to the admin dashboard so
@@ -182,6 +197,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 				return
 			case <-ticker.C:
 				registry.RevalidateTokens()
+				if err := db.PruneRequestLogs(14); err != nil {
+					log.Error().Err(err).Msg("pruning request logs")
+				}
 			}
 		}
 	}()
@@ -202,10 +220,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 		errCh <- adminSrv.ListenAndServe()
 	}()
 
+	var serveErr error
 	select {
 	case err := <-errCh:
 		if err != nil && err != http.ErrServerClosed {
-			return fmt.Errorf("server error: %w", err)
+			serveErr = fmt.Errorf("server error: %w", err)
 		}
 	case <-ctx.Done():
 		log.Info().Msg("shutdown signal received")
@@ -216,8 +235,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	log.Info().Msg("shutting down gracefully…")
 	publicSrv.Shutdown(shutCtx) //nolint:errcheck
 	adminSrv.Shutdown(shutCtx)  //nolint:errcheck
+	if acmeSrv != nil {
+		acmeSrv.Shutdown(shutCtx) //nolint:errcheck
+	}
 	log.Info().Msg("server stopped")
-	return nil
+	return serveErr
 }
 
 // ── TLS ───────────────────────────────────────────────────────────────────────
@@ -234,12 +256,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 // with the --dns-* plugin) or set tls_cert_file/tls_key_file. The autocert path
 // here issues per-subdomain certs on demand, which works fine for tunnels but
 // requires port 80 to be accessible for the HTTP-01 challenge.
-func buildTLSConfig(cfg *config.Server) (*tls.Config, error) {
+func buildTLSConfig(cfg *config.Server) (*tls.Config, *http.Server, error) {
 	// ── 1. Manual certs (highest priority) ───────────────────────────────────
 	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading cert pair (%s, %s): %w",
+			return nil, nil, fmt.Errorf("loading cert pair (%s, %s): %w",
 				cfg.TLSCertFile, cfg.TLSKeyFile, err)
 		}
 		log.Info().
@@ -251,7 +273,7 @@ func buildTLSConfig(cfg *config.Server) (*tls.Config, error) {
 			MinVersion:   tls.VersionTLS12,
 			CipherSuites: secureCiphers(),
 			NextProtos:   []string{"h2", "http/1.1"},
-		}, nil
+		}, nil, nil
 	}
 
 	// ── 2. Let's Encrypt autocert ─────────────────────────────────────────────
@@ -261,45 +283,44 @@ func buildTLSConfig(cfg *config.Server) (*tls.Config, error) {
 			cacheDir = "./.autocert-cache"
 		}
 		if err := os.MkdirAll(cacheDir, 0700); err != nil {
-			return nil, fmt.Errorf("creating ACME cache dir %s: %w", cacheDir, err)
+			return nil, nil, fmt.Errorf("creating ACME cache dir %s: %w", cacheDir, err)
 		}
 
 		m := &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
-			// HostPolicy allows the base domain and any single-level subdomain.
-			// autocert issues individual certs per subdomain on first request
-			// (HTTP-01 challenge). This means the first request to a new subdomain
-			// may be slow (~2s) while the cert is issued; subsequent requests use
-			// the cached cert.
-			HostPolicy: autocert.HostWhitelist(), // replaced at runtime — see below
-			Cache:      autocert.DirCache(cacheDir),
-			Email:      cfg.TLSEmail,
+			Cache:  autocert.DirCache(cacheDir),
+			Email:  cfg.TLSEmail,
 		}
 
-		// Allow any subdomain of our base domain dynamically.
+		// Only the base name and a single DNS label under it. Multi-label
+		// names are not routed to a tunnel, and issuing certs for them burns
+		// the account's Let's Encrypt quota.
 		m.HostPolicy = func(ctx context.Context, host string) error {
-			// Allow exact domain and any *.domain subdomain
+			host = strings.TrimSuffix(strings.ToLower(host), ".")
 			if host == cfg.Domain {
 				return nil
 			}
 			suffix := "." + cfg.Domain
-			if len(host) > len(suffix) && host[len(host)-len(suffix):] == suffix {
-				return nil
+			if strings.HasSuffix(host, suffix) {
+				label := strings.TrimSuffix(host, suffix)
+				if label != "" && !strings.Contains(label, ".") {
+					return nil
+				}
 			}
-			return fmt.Errorf("host %q not allowed", host)
+			return fmt.Errorf("host %q is not a single-label name under %s", host, cfg.Domain)
 		}
 
-		// Start HTTP-01 challenge responder on port 80.
-		// This must be reachable from the internet for Let's Encrypt to work.
+		// HTTP-01 challenge responder on port 80. Returned so shutdown can
+		// close it; a bind failure is logged from the goroutine.
+		acmeSrv := &http.Server{
+			Addr:         ":80",
+			Handler:      m.HTTPHandler(nil),
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
 		go func() {
 			log.Info().Msg("ACME: HTTP-01 challenge server listening on :80")
-			srv := &http.Server{
-				Addr:         ":80",
-				Handler:      m.HTTPHandler(nil),
-				ReadTimeout:  10 * time.Second,
-				WriteTimeout: 10 * time.Second,
-			}
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := acmeSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Error().Err(err).Msg("ACME challenge server error")
 			}
 		}()
@@ -315,7 +336,7 @@ func buildTLSConfig(cfg *config.Server) (*tls.Config, error) {
 			MinVersion:     tls.VersionTLS12,
 			CipherSuites:   secureCiphers(),
 			NextProtos:     []string{"h2", "http/1.1"},
-		}, nil
+		}, acmeSrv, nil
 	}
 
 	// ── 3. No TLS — dev/local mode ────────────────────────────────────────────
@@ -323,7 +344,7 @@ func buildTLSConfig(cfg *config.Server) (*tls.Config, error) {
 		Int("http_port", cfg.HTTPPort).
 		Msg("TLS: no cert configured — running plain HTTP (dev mode)")
 	log.Warn().Msg("TLS: do NOT run without TLS in production")
-	return nil, nil
+	return nil, nil, nil
 }
 
 // secureCiphers returns a modern cipher suite list (TLS 1.2+).

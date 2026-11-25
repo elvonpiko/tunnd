@@ -59,6 +59,9 @@ if command -v sha256sum &>/dev/null; then
   grep "$TARBALL" checksums.txt | sha256sum --check --status
 elif command -v shasum &>/dev/null; then
   grep "$TARBALL" checksums.txt | shasum -a 256 --check --status
+else
+  echo "error: sha256sum or shasum is required to verify the download" >&2
+  exit 1
 fi
 echo "✔ Checksum verified"
 

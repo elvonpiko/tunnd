@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -371,7 +372,6 @@ func httpLikeCmd(use, short, long string, wsMode bool) *cobra.Command {
 }
 
 func tcpCmd() *cobra.Command {
-	var subdomain string
 	return &cobra.Command{
 		Use:   "tcp <port>",
 		Short: "Tunnel a raw TCP port on localhost",
@@ -388,7 +388,7 @@ func tcpCmd() *cobra.Command {
 			cfg.InspectorPort = 0 // TCP never uses inspector
 			// Raw TCP has no HTTP layer, so upstream-scheme / skip-verify
 			// don't apply. The flags are not registered on tcpCmd.
-			return runTunnel(cfg, "tcp", subdomain, port, "", false, "", false)
+			return runTunnel(cfg, "tcp", "", port, "", false, "", false)
 		},
 	}
 }
@@ -609,6 +609,8 @@ type tunnelClient struct {
 
 	streamsMu sync.RWMutex
 	streams   map[string]*clientStream
+
+	inspectorOnce sync.Once
 }
 
 type fatalError struct{ cause error }
@@ -647,11 +649,6 @@ func (tc *tunnelClient) connectWithRetry(ctx context.Context) error {
 			return nil
 		default:
 		}
-		// A previous successful registration means the last connect cycle
-		// got past the handshake — reset the retry budget for this one.
-		if tc.registered {
-			registerRetries = 0
-		}
 		if attempt > 0 {
 			log.Info().Dur("retry_in", backoff).Int("attempt", attempt+1).Msg("reconnecting…")
 			select {
@@ -686,6 +683,12 @@ func (tc *tunnelClient) connectWithRetry(ctx context.Context) error {
 					Msg("registration rejected — will retry")
 				continue
 			}
+			// A live tunnel dropped. The next rejection storm gets a fresh
+			// budget. Retryable rejections do not land here, so they keep
+			// counting toward maxRegisterRetries.
+			if tc.registered {
+				registerRetries = 0
+			}
 			log.Error().Err(err).Msg("tunnel disconnected")
 			continue
 		}
@@ -713,7 +716,10 @@ func (tc *tunnelClient) connect(ctx context.Context) error {
 	}
 
 	if tc.protocol == "http" && tc.cfg.InspectorPort > 0 {
-		go runInspector(tc.publicURL, tc.localPort, tc.cfg.InspectorPort)
+		publicURL, localPort, inspectorPort := tc.publicURL, tc.localPort, tc.cfg.InspectorPort
+		tc.inspectorOnce.Do(func() {
+			go runInspector(publicURL, localPort, inspectorPort)
+		})
 	}
 
 	return tc.readLoop(ctx, conn)
@@ -939,59 +945,82 @@ func (tc *tunnelClient) driveStream(conn *websocket.Conn, cs *clientStream) {
 	cs.localConn = localConn
 	cs.localMu.Unlock()
 
-	// ── Pump request bytes from the buffer → local conn ─────────────────────
-	// io.Copy returns when the buffer is closed (server signaled MsgReqDone)
-	// or on write error. We use a deadline-resetting wrapper so a stuck local
-	// service eventually surfaces a write timeout.
+	// Read the request line first so the inspector records the real method
+	// and path, then copy the rest of the request to the local service.
+	reqMethod, reqPath := "GET", "/"
+	reqReader := bufio.NewReader(cs.req)
+	if line, err := reqReader.ReadString('\n'); err == nil {
+		reqMethod, reqPath = parseRequestLine(line)
+		if _, werr := (deadlineWriter{conn: localConn, timeout: 30 * time.Second}).Write([]byte(line)); werr != nil {
+			return
+		}
+	}
 	pumpDone := make(chan struct{})
 	go func() {
 		defer close(pumpDone)
-		_, _ = io.Copy(deadlineWriter{conn: localConn, timeout: 30 * time.Second}, cs.req)
+		_, _ = io.Copy(deadlineWriter{conn: localConn, timeout: 30 * time.Second}, reqReader)
 	}()
 	<-pumpDone
 
-	// Half-close the write side so the upstream local server knows the
-	// request body is fully delivered (most servers won't respond otherwise).
-	if tcpConn, ok := localConn.(*net.TCPConn); ok {
-		tcpConn.CloseWrite() //nolint:errcheck
+	// Half-close the write side so the upstream knows the body is finished.
+	// *tls.Conn implements CloseWrite; a bare *net.TCPConn does too.
+	if hc, ok := localConn.(interface{ CloseWrite() error }); ok {
+		_ = hc.CloseWrite()
 	}
 
-	// ── Read response bytes from local conn → MsgData frames to server ──────
-	buf := make([]byte, 32*1024)
-	var (
-		statusCode int
-		method     = "GET"
-		urlPath    = "/"
-	)
-	// Clear any stale read deadline left by an earlier path, then set a
-	// single whole-stream cap of 60 minutes. This is the documented
-	// long-stream limit: SSE / long-poll / chunked responses survive as
-	// long as bytes flow within this window, even when the per-byte
-	// interval exceeds 120s. Liveness for shorter intervals is enforced
-	// at the wire level (WebSocket ping/pong) and at the upstream level
-	// (TCP keepalive). See design.md Property P7 and bugfix.md clause 1.9.
-	_ = localConn.SetReadDeadline(time.Time{})
+	// Read the response. The deadline slides on every read: silence for 60
+	// minutes ends the stream, bytes flowing do not.
+	respReader := bufio.NewReader(localConn)
 	_ = localConn.SetReadDeadline(time.Now().Add(60 * time.Minute))
-	for {
-		n, err := localConn.Read(buf)
+	statusLine, readErr := respReader.ReadString('\n')
+	statusCode := 0
+	if statusLine != "" {
+		statusCode = parseStatusCode(statusLine)
+		if sendErr := tc.sendData(conn, cs.id, []byte(statusLine)); sendErr != nil {
+			logRequest(reqMethod, tc.publicURL+reqPath, statusCode, time.Since(start))
+			return
+		}
+	}
+	buf := make([]byte, 32*1024)
+	for readErr == nil {
+		_ = localConn.SetReadDeadline(time.Now().Add(60 * time.Minute))
+		var n int
+		n, readErr = respReader.Read(buf)
 		if n > 0 {
-			if statusCode == 0 && n > 12 {
-				fmt.Sscanf(string(buf[9:12]), "%d", &statusCode)
-			}
 			if sendErr := tc.sendData(conn, cs.id, buf[:n]); sendErr != nil {
-				log.Debug().Err(sendErr).Str("stream", cs.id).Msg("sending response data")
 				break
 			}
-		}
-		if err != nil {
-			break
 		}
 	}
 
 	if statusCode == 0 {
 		statusCode = 502
 	}
-	logRequest(method, tc.publicURL+urlPath, statusCode, time.Since(start))
+	logRequest(reqMethod, tc.publicURL+reqPath, statusCode, time.Since(start))
+}
+
+func parseRequestLine(line string) (method, path string) {
+	parts := strings.SplitN(strings.TrimRight(line, "\r\n"), " ", 3)
+	if len(parts) < 2 || parts[0] == "" {
+		return "GET", "/"
+	}
+	path = parts[1]
+	if path == "" {
+		path = "/"
+	}
+	return parts[0], path
+}
+
+func parseStatusCode(line string) int {
+	parts := strings.SplitN(strings.TrimRight(line, "\r\n"), " ", 3)
+	if len(parts) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // openTCPStream is called for `tunnd tcp <port>` tunnels. Unlike the HTTP
@@ -1147,7 +1176,16 @@ func probeUpstreamScheme(port int) (scheme string, skipVerify bool) {
 	if err := tlsConn.HandshakeContext(hsCtx); err != nil {
 		return "http", false
 	}
-	return "https", true
+	// A certificate the system trusts does not need verification skipped.
+	// Self-signed dev certs (vite, httptest) still do.
+	skip := true
+	state := tlsConn.ConnectionState()
+	if len(state.PeerCertificates) > 0 {
+		if _, err := state.PeerCertificates[0].Verify(x509.VerifyOptions{DNSName: "localhost"}); err == nil {
+			skip = false
+		}
+	}
+	return "https", skip
 }
 
 // deadlineWriter wraps a net.Conn and resets its write deadline before every Write.

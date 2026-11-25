@@ -33,7 +33,7 @@ DOMAIN="${DOMAIN:-}"
 EMAIL="${EMAIL:-}"
 TLS_CERT="${TLS_CERT:-}"
 TLS_KEY="${TLS_KEY:-}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -hex 16)}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 DATA_DIR="${DATA_DIR:-/var/lib/tunnd}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/tunnd}"
@@ -121,8 +121,13 @@ curl -fsSL "${BASE_URL}/checksums.txt" -o "${TMP}/checksums.txt"
 
 cd "$TMP"
 if command -v sha256sum &>/dev/null; then
-  grep "$TARBALL" checksums.txt | sha256sum --check --status && success "Checksum verified"
+  grep "$TARBALL" checksums.txt | sha256sum --check --status || die "Checksum verification failed"
+elif command -v shasum &>/dev/null; then
+  grep "$TARBALL" checksums.txt | shasum -a 256 --check --status || die "Checksum verification failed"
+else
+  die "sha256sum or shasum is required to verify the download"
 fi
+success "Checksum verified"
 
 tar -xzf "$TARBALL"
 mv tunnd-server "${INSTALL_DIR}/tunnd-server"
@@ -176,9 +181,9 @@ db_path: "${DATA_DIR}/tunnd.db"
 
 # ── Admin dashboard ───────────────────────────────────────────────────────────
 # Access the dashboard over HTTPS on the base domain: https://${DOMAIN}
-# (password: see below). The admin port 9091 binds to 127.0.0.1 — reachable
-# via SSH tunnel (ssh -L 9091:localhost:9091) or by setting admin_bind.
-admin_password: "${ADMIN_PASSWORD}"
+# Leave admin_password unset to use the first-run /setup page (bcrypt).
+# The admin port 9091 binds to 127.0.0.1 — reachable via SSH tunnel
+# (ssh -L 9091:localhost:9091) or by setting admin_bind.
 
 # ── Limits ────────────────────────────────────────────────────────────────────
 max_tunnels_per_token: 0
@@ -193,6 +198,13 @@ tcp_max_port: 20100
 log_level: "info"
 log_format: "json"
 YAML
+
+if [[ -n "$ADMIN_PASSWORD" ]]; then
+  # Explicit opt-in. This plaintext value wins over the dashboard password
+  # and disables the in-dashboard change-password flow.
+  printf 'admin_password: "%s"\n' "$ADMIN_PASSWORD" >> "${CONFIG_DIR}/tunnd-server.yaml"
+  warn "ADMIN_PASSWORD is set in the config file. The dashboard cannot change it."
+fi
 
 chown tunnd:tunnd "${CONFIG_DIR}/tunnd-server.yaml"
 chmod 640 "${CONFIG_DIR}/tunnd-server.yaml"
@@ -277,7 +289,25 @@ echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━�
 echo
 echo -e "  ${BOLD}Server URL:${RESET}     https://${DOMAIN}"
 echo -e "  ${BOLD}Admin panel:${RESET}    https://${DOMAIN}"
-echo -e "  ${BOLD}Admin password:${RESET} ${ADMIN_PASSWORD}"
+if [[ -n "$ADMIN_PASSWORD" ]]; then
+  echo -e "  ${BOLD}Admin password:${RESET} ${ADMIN_PASSWORD} (from ADMIN_PASSWORD; stored in the config file)"
+else
+  SETUP_TOKEN=""
+  for _ in $(seq 1 20); do
+    if [[ -f "${DATA_DIR}/setup.token" ]]; then
+      SETUP_TOKEN=$(tr -d '[:space:]' < "${DATA_DIR}/setup.token")
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ -n "$SETUP_TOKEN" ]]; then
+    echo -e "  ${BOLD}Setup token:${RESET}    ${CYAN}${SETUP_TOKEN}${RESET}"
+    echo -e "  Open https://${DOMAIN}/setup and choose an admin password."
+    echo -e "  The token is also in the server log. It is required once."
+  else
+    warn "Could not read ${DATA_DIR}/setup.token — check: journalctl -u tunnd"
+  fi
+fi
 echo -e "  ${BOLD}Admin port (LAN):${RESET} loopback only — ssh -L 9091:localhost:9091 to reach http://localhost:9091"
 echo
 if [[ -n "$FIRST_TOKEN" ]]; then

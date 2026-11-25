@@ -15,11 +15,10 @@ Internet (HTTPS :443)
     ↓
 Caddy (TLS termination, your wildcard cert)
     ↓
-tunnd-server:9095  ← tunnel traffic + WebSocket control plane
-tunnd-server:9096  ← admin dashboard
+tunnd-server:8080  ← tunnel traffic, WebSocket control plane, and the admin dashboard
 ```
 
-Tunnd is never exposed to the internet directly — only Caddy is.
+The public listener serves all three. The base domain is the dashboard; subdomains are tunnels; `/_tunnd/control` is the client connection. The admin port stays on loopback and is not what Caddy should proxy. Tunnd is not exposed to the internet directly.
 
 ---
 
@@ -28,30 +27,16 @@ Tunnd is never exposed to the internet directly — only Caddy is.
 Replace `tunnd.example.com` with your actual domain and cert paths:
 
 ```caddy
-# Admin dashboard
-tunnd.example.com {
+# Base domain (dashboard + control plane) and tunnel subdomains.
+# Point both at tunnd's plain HTTP port. Set TUNND_PUBLIC_SCHEME=https
+# and TUNND_PUBLIC_PORT=443 so the client prints https URLs.
+*.tunnd.example.com, tunnd.example.com {
     tls /etc/caddy/certs/tunnd/fullchain.pem /etc/caddy/certs/tunnd/privkey.pem
 
-    # WebSocket control plane — clients connect here
-    handle /_tunnd/control {
-        reverse_proxy tunnd-server:9095
-    }
-
-    # Admin dashboard
-    handle {
-        reverse_proxy tunnd-server:9096
-    }
-}
-
-# All tunnel subdomains
-*.tunnd.example.com {
-    tls /etc/caddy/certs/tunnd/fullchain.pem /etc/caddy/certs/tunnd/privkey.pem
-
-    reverse_proxy tunnd-server:9095 {
+    reverse_proxy tunnd-server:8080 {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
-        header_up Host {host}
     }
 }
 ```
@@ -101,12 +86,14 @@ If Caddy is already running as a separate container on a `proxy` network:
 ```yaml
 # /data/tunnd-server.yaml
 domain: "tunnd.example.com"
-http_port: 9095     # internal — Caddy handles public :443
-admin_port: 9096
+http_port: 8080              # internal — Caddy handles public :443
+public_scheme: "https"       # URLs the client prints
+public_port: 443
 db_path: "/data/tunnd.db"
 log_level: "info"
 log_format: "json"
-# No tls_email, no tls_cert_file — Caddy handles TLS
+# No tls_email, no tls_cert_file — Caddy handles TLS.
+# Leave admin_password unset and set it on the first visit to the dashboard.
 ```
 
 ---

@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     ports:
       - "443:443"     # Public HTTPS tunnel traffic
-      - "9091:9091"   # Admin dashboard
+      - "127.0.0.1:9091:9091"   # Admin dashboard, loopback on the host only
       - "20000-20100:20000-20100" # Public TCP tunnel ports
     volumes:
       - tunnd-data:/data

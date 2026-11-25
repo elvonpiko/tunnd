@@ -174,7 +174,7 @@ Provide a wildcard certificate (e.g., `*.tunnel.example.com`) via `tls_cert_file
 ### Mode 3: Reverse Proxy (No Direct TLS)
 
 ```
-Internet → Reverse Proxy (handles TLS) → tunnd-server :9091 (plain HTTP)
+Internet → Reverse Proxy (handles TLS) → tunnd-server public HTTP port (plain HTTP)
 ```
 
 A reverse proxy (Caddy, Nginx, or Traefik) terminates TLS and forwards plain HTTP to Tunnd on the admin port. The proxy handles wildcard certificate issuance, typically via DNS-01 challenge.
@@ -198,7 +198,7 @@ Internet ──→ tunnd-server :443 (TLS)
 ### Option B: Behind Caddy
 
 ```
-Internet ──→ Caddy :443 (TLS termination) ──→ tunnd-server :9091
+Internet ──→ Caddy :443 (TLS termination) ──→ tunnd-server public HTTP port
                    :80  (ACME HTTP-01)
 ```
 
@@ -207,7 +207,7 @@ Caddy automatically obtains and renews TLS certificates. Supports wildcard certs
 ### Option C: Behind Nginx
 
 ```
-Internet ──→ Nginx :443 (TLS termination) ──→ tunnd-server :9091
+Internet ──→ Nginx :443 (TLS termination) ──→ tunnd-server public HTTP port
 ```
 
 Manual certificate management or integration with Certbot.
@@ -215,7 +215,7 @@ Manual certificate management or integration with Certbot.
 ### Option D: Behind Traefik
 
 ```
-Internet ──→ Traefik :443 (TLS termination) ──→ tunnd-server :9091
+Internet ──→ Traefik :443 (TLS termination) ──→ tunnd-server public HTTP port
 ```
 
 Traefik auto-discovers services and manages TLS certificates via Let's Encrypt.

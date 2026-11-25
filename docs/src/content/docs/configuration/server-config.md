@@ -72,7 +72,7 @@ admin_bind: "0.0.0.0"   # opt back into all-interfaces binding
 
 Environment variable: `TUNND_ADMIN_BIND`
 
-::: warning[Changed in v0.2.1 — breaking]
+::: warning[Changed in v0.3.0 — breaking]
 Previously the admin port bound to all interfaces. If you access the dashboard via `http://<server-ip>:9091`, add `admin_bind: "0.0.0.0"` to keep that setup — or better, switch to the base-domain HTTPS route or an SSH tunnel.
 :::
 

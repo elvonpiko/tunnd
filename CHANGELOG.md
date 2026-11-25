@@ -7,6 +7,31 @@ Goreleaser also auto-generates a per-release changelog from commit messages
 on tag; this file captures hand-written notes for the changes that warrant
 extra context (breaking changes, migration notes, wire-protocol compatibility).
 
+## [Unreleased]
+
+### Fixed
+
+- Installers abort when the release checksum does not match, or when no checksum tool is installed.
+- SQLite now actually runs in WAL mode with foreign keys and a busy timeout. The previous DSN used a driver syntax this module ignores.
+- Streamed responses are flushed to the browser as they arrive.
+- A stalled response closes that stream instead of blocking the control connection, which was dropping every tunnel on the client after the pong deadline.
+- Reconnecting a token that is already at its tunnel limit replaces the stale session instead of returning `tunnel_limit_reached`.
+- The client's host-header policy is stored before the session can serve traffic.
+- The local inspector records the real method, path, and status.
+- HTTPS upstreams half-close the write side after the request, including TLS connections.
+- Response reads use a 60-minute idle timeout that resets while bytes flow.
+- After a successful registration, retryable rejections still stop after 10 attempts.
+- Public tunnel URLs follow the listener scheme and port. Set `public_scheme` / `public_port` when a reverse proxy terminates TLS.
+- Let's Encrypt only issues certificates for the base domain and a single label under it.
+- `POST /setup` requires the setup token printed at startup. A page served on a tunnel subdomain cannot call the admin API.
+- `X-Forwarded-For` and `X-Forwarded-Proto` from a public client are replaced with the connection tunnd accepted. Private peers (a local reverse proxy) still keep the proxy's headers.
+- Request logs older than 14 days are deleted.
+
+### Changed
+
+- `setup.sh` no longer writes a random `admin_password` into the config. The first visit to the dashboard sets a bcrypt password. Set `ADMIN_PASSWORD` only when you want the legacy config password.
+- Docker Compose publishes the admin port on `127.0.0.1` of the host.
+
 ## [0.3.0] - Pending
 
 Security hardening and reconnect reliability, focused on the server's failure modes: what happens when a client reconnects mid-session, when a device is revoked, when someone hammers the login page, and when a stream outlives a request timeout.
@@ -23,7 +48,7 @@ Security hardening and reconnect reliability, focused on the server's failure mo
 
 - **Long streams no longer die at 30 seconds.** The public listener previously set `WriteTimeout: 30s`, so any streamed response — SSE, long-polls, big downloads — was severed after 30 seconds on a fresh production-style listener (the dev harness ran a different listener and masked this). The public listener now uses `ReadHeaderTimeout: 30s` + `IdleTimeout: 120s` only, matching the stream-first design; liveness is enforced on the control plane (pong deadline), not on data streams. A production-configured e2e test (`TestE2E_ProductionListener_LongSSE_SurvivesOldWriteTimeout`) fails if this regresses.
 - **Reconnect storms are survivable.** The client retries transient registration rejections (`subdomain_in_use`, `tunnel_limit_reached`) with exponential backoff for up to ~3 minutes, remembers its assigned subdomain so the tunnel URL stays stable across reconnects, and prints actionable hints when giving up. Previously a `subdomain_in_use` rejection during a server-side timeout window (up to ~90s) aborted the client.
-- **Random subdomains are unguessable.** Generated subdomains now carry a 6-character crypto-random base32 suffix (`happy-river-4tq7zm`, ~2.8 × 10³⁸ space) instead of a bare word pair that could be enumerated from the word list.
+- **Random subdomains are unguessable.** Generated subdomains now carry a 6-character crypto-random base32 suffix (`happy-river-4tq7zm`, 30 bits, about 4 × 10¹¹ names together with the word pair) instead of a bare word pair that could be enumerated from the word list.
 - **setup.sh no longer opens port 9091 in ufw** and no longer prints a nonexistent "Username: admin" line — the dashboard is reached at `https://<domain>` (or via SSH tunnel), not over plain HTTP on a public admin port.
 
 ### Changed (breaking)

@@ -29,8 +29,8 @@
 #
 # Usage:
 #   export TUNND_DOMAIN=tunnel.yourdomain.com
-#   export TUNND_ADMIN_PASSWORD=your-secure-password
 #   docker compose -f docker-compose.caddy.yml up -d
+# Leave TUNND_ADMIN_PASSWORD unset to set the password on the first visit.
 
 services:
   tunnd-server:
@@ -60,6 +60,9 @@ services:
       # Plain HTTP behind Caddy — Caddy terminates TLS. Any port other than 443
       # disables tunnd's own TLS requirement.
       - TUNND_HTTP_PORT=8080
+      # Browsers use https on 443. Tunnd itself is plain HTTP on 8080.
+      - TUNND_PUBLIC_SCHEME=https
+      - TUNND_PUBLIC_PORT=443
 
       # Optional: admin password — leave unset to use the first-run bootstrap flow
       # (visit the admin URL and set a password on first login)

@@ -6,6 +6,7 @@
 package tunnel
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -136,19 +137,42 @@ func TestApplyHostHeader_NilSafe(t *testing.T) {
 
 // ── setForwardedHeaders ──────────────────────────────────────────────────────
 
-// TestSetForwardedHeaders_Append verifies that an existing X-Forwarded-For
-// chain is preserved and the new client IP is appended per RFC 7239
-// conventions ("a, b" comma-space separated).
-func TestSetForwardedHeaders_Append(t *testing.T) {
+// TestSetForwardedHeaders_PublicPeerReplacesSpoofedChain verifies that a
+// public client cannot pin X-Forwarded-For. The header becomes just the
+// TCP peer.
+func TestSetForwardedHeaders_PublicPeerReplacesSpoofedChain(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "myapp.tunnd.example"
 	req.RemoteAddr = "203.0.113.7:50000"
 	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	req.Header.Set("X-Forwarded-Proto", "https")
 
 	setForwardedHeaders(req, "myapp.tunnd.example")
 
-	if got, want := req.Header.Get("X-Forwarded-For"), "10.0.0.1, 203.0.113.7"; got != want {
+	if got, want := req.Header.Get("X-Forwarded-For"), "203.0.113.7"; got != want {
 		t.Errorf("X-Forwarded-For = %q, want %q", got, want)
+	}
+	if got, want := req.Header.Get("X-Forwarded-Proto"), "http"; got != want {
+		t.Errorf("X-Forwarded-Proto = %q, want %q (no TLS on the accepted connection)", got, want)
+	}
+}
+
+// TestSetForwardedHeaders_TrustedProxyAppends verifies that a private peer
+// (a local reverse proxy) keeps the inbound chain and is appended to it.
+func TestSetForwardedHeaders_TrustedProxyAppends(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "myapp.tunnd.example"
+	req.RemoteAddr = "172.17.0.2:50000"
+	req.Header.Set("X-Forwarded-For", "203.0.113.7")
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	setForwardedHeaders(req, "myapp.tunnd.example")
+
+	if got, want := req.Header.Get("X-Forwarded-For"), "203.0.113.7, 172.17.0.2"; got != want {
+		t.Errorf("X-Forwarded-For = %q, want %q", got, want)
+	}
+	if got, want := req.Header.Get("X-Forwarded-Proto"), "https"; got != want {
+		t.Errorf("X-Forwarded-Proto = %q, want %q (preserved from the proxy)", got, want)
 	}
 }
 
@@ -167,46 +191,25 @@ func TestSetForwardedHeaders_New(t *testing.T) {
 	}
 }
 
-// TestSetForwardedHeaders_Proto_FromCaddy verifies that an inbound
-// X-Forwarded-Proto (typically set by Caddy in production) is preserved
-// verbatim and NOT overwritten by the helper.
-func TestSetForwardedHeaders_Proto_FromCaddy(t *testing.T) {
+// TestSetForwardedHeaders_Proto_DirectTLS verifies that a public peer on a
+// TLS connection is recorded as https, ignoring a client-supplied value.
+func TestSetForwardedHeaders_Proto_DirectTLS(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "myapp.tunnd.example"
 	req.RemoteAddr = "203.0.113.7:50000"
-	req.Header.Set("X-Forwarded-Proto", "https")
+	req.TLS = &tls.ConnectionState{}
+	req.Header.Set("X-Forwarded-Proto", "http")
 
 	setForwardedHeaders(req, "myapp.tunnd.example")
 
 	if got, want := req.Header.Get("X-Forwarded-Proto"), "https"; got != want {
-		t.Errorf("X-Forwarded-Proto = %q, want %q (preserved)", got, want)
+		t.Errorf("X-Forwarded-Proto = %q, want %q", got, want)
 	}
 }
 
-// TestSetForwardedHeaders_Proto_DefaultProduction verifies that with no
-// inbound X-Forwarded-Proto, the helper defaults to "https" — the
-// production assumption since Caddy fronts the tunnel server with TLS.
-func TestSetForwardedHeaders_Proto_DefaultProduction(t *testing.T) {
-	// Ensure dev-mode env var does not leak into this test.
-	t.Setenv("TUNND_DEV_MODE", "")
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Host = "myapp.tunnd.example"
-	req.RemoteAddr = "203.0.113.7:50000"
-
-	setForwardedHeaders(req, "myapp.tunnd.example")
-
-	if got, want := req.Header.Get("X-Forwarded-Proto"), "https"; got != want {
-		t.Errorf("X-Forwarded-Proto = %q, want %q (production default)", got, want)
-	}
-}
-
-// TestSetForwardedHeaders_Proto_DevMode verifies that with TUNND_DEV_MODE=1
-// and no inbound X-Forwarded-Proto, the helper defaults to "http" — the
-// local-dev assumption when no TLS-terminating proxy fronts the server.
-func TestSetForwardedHeaders_Proto_DevMode(t *testing.T) {
-	t.Setenv("TUNND_DEV_MODE", "1")
-
+// TestSetForwardedHeaders_Proto_PlainHTTP verifies that a public peer without
+// TLS is recorded as http.
+func TestSetForwardedHeaders_Proto_PlainHTTP(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "myapp.tunnd.example"
 	req.RemoteAddr = "203.0.113.7:50000"
@@ -214,7 +217,7 @@ func TestSetForwardedHeaders_Proto_DevMode(t *testing.T) {
 	setForwardedHeaders(req, "myapp.tunnd.example")
 
 	if got, want := req.Header.Get("X-Forwarded-Proto"), "http"; got != want {
-		t.Errorf("X-Forwarded-Proto = %q, want %q (dev-mode default)", got, want)
+		t.Errorf("X-Forwarded-Proto = %q, want %q", got, want)
 	}
 }
 
@@ -359,6 +362,15 @@ func TestProperty_XForwardedForAppend(t *testing.T) {
 
 		got := req.Header.Get("X-Forwarded-For")
 		newIP := formatIPv4(in.ClientIP)
+
+		// A public peer replaces any client-supplied chain.
+		if !peerIsTrustedProxy(newIP) {
+			if got != newIP {
+				t.Logf("public peer chain %q, want %q", got, newIP)
+				return false
+			}
+			return true
+		}
 
 		// No leading or trailing whitespace.
 		if got != strings.TrimSpace(got) {
