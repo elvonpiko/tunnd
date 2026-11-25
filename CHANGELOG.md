@@ -7,7 +7,9 @@ Goreleaser also auto-generates a per-release changelog from commit messages
 on tag; this file captures hand-written notes for the changes that warrant
 extra context (breaking changes, migration notes, wire-protocol compatibility).
 
-## [Unreleased]
+## [0.3.1] - 2026-11-25
+
+First published release after v0.2.1. It includes the v0.3.0 security batch below, plus these follow-up fixes. `install.sh` and `setup.sh` install this release.
 
 ### Fixed
 
@@ -31,8 +33,11 @@ extra context (breaking changes, migration notes, wire-protocol compatibility).
 
 - `setup.sh` no longer writes a random `admin_password` into the config. The first visit to the dashboard sets a bcrypt password. Set `ADMIN_PASSWORD` only when you want the legacy config password.
 - Docker Compose publishes the admin port on `127.0.0.1` of the host.
+- Landing page, docs, admin dashboard, and the local inspector share one sand-on-black arch mark.
 
-## [0.3.0] - Pending
+## [0.3.0] - 2026-11-25
+
+Tagged at the security batch. No separate binary release; those changes shipped to users in v0.3.1.
 
 Security hardening and reconnect reliability, focused on the server's failure modes: what happens when a client reconnects mid-session, when a device is revoked, when someone hammers the login page, and when a stream outlives a request timeout.
 

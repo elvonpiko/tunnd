@@ -63,9 +63,9 @@ These are on the roadmap as community demand justifies them. PRs and feature req
 
 Tunnd auto-detects HTTPS dev servers (`vite --https`, `next dev --experimental-https`) and rewrites the Host header so frameworks like Vite, Next.js, and webpack-dev-server accept the request without `allowedHosts` config. Run `tunnd http <port>` and any local app works.
 
-### On main, after v0.2.1
+### What's in v0.3.1
 
-The [v0.2.1 release](https://github.com/elvonpiko/tunnd/releases/tag/v0.2.1) is what `install.sh` downloads. `main` is ahead of it:
+[v0.3.1](https://github.com/elvonpiko/tunnd/releases/tag/v0.3.1) is the current release. It includes the 0.3.0 security batch and:
 
 - A reconnect replaces your own stale session instead of failing while that name is still held.
 - Revoking a token disconnects its live tunnels.
